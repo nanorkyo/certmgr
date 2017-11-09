@@ -631,7 +631,7 @@ sub export_cert($$$$$$$$$@) {
 		while(  defined $issuer  )  {
 			my $chaintext;
 			($chaintext, $issuer) = $dbh->selectrow_array(q{
-				SELECT crttext
+				SELECT crttext, issuer
 				  FROM sslcrt
 				 INNER JOIN certificate USING(certid)
 				 WHERE subject = ? AND subject <> issuer AND is_active = 't'
