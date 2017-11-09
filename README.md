@@ -138,3 +138,10 @@ certmgr は設定ファイルを必要とします。
 
 ## スポンサー
 [株式会社エンターモーション](http://entermotion.jp/)
+
+## 参考文献
+* [SSLサーバー証明書の作り方](https://wiki.ninth-nine.com/SSL証明書/サーバー証明書の作り方)
+* [俺々ＳＳＬサーバー証明書の作り方](https://wiki.ninth-nine.com/SSL証明書/俺々SSLサーバー証明書の作り方)
+* [openssl req](https://wiki.ninth-nine.com/OpenSSL/req)
+* [openssl x509](https://wiki.ninth-nine.com/OpenSSL/x509)
+* [X.509証明書の検証手順とありがちな脆弱性](https://qiita.com/n-i-e/items/35cba71d04b9123e676c)
