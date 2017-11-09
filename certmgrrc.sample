@@ -1,0 +1,5 @@
+CertRepo:	dbi:SQLite:dbname=/var/db/certmgr.sqlite
+UserName: 
+PassWord: 
+DefaultMarked:	yes
+BaseName:	%CN%
