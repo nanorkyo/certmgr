@@ -393,7 +393,8 @@ sub import_csr($$$$) {
 	my $cn      = get_cn_from_subject($subj);
 
 	if(  $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslcsr WHERE hashkey = ?)", {}, $csrhash)  )  {
-		return sprintf("%s: CSR was already imported: subject=%s", $c->cmd, $subj);
+		printf("%s ignored: cert=CSR, error=already imported, subject=%s\n", $c->cmd, $subj);
+		return;
 	} # NOT REACHABLE #
 
 	$dbh->begin_work;
@@ -416,7 +417,8 @@ sub import_csr($$$$) {
 
 	$dbh->commit;
 
-	return sprintf("%s: CSR was imported successfully: subject=%s", $c->cmd, $subj);
+	printf("%s successfully: cert=CSR, subject=%s\n", $c->cmd, $subj);
+	return;
 } # import_csr
 
 sub import_key($$$) {
@@ -425,7 +427,8 @@ sub import_key($$$) {
 
 	if(  $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslkey WHERE hashkey = ?)", {}, $keyhash)  )  {
 		my $subj = $dbh->selectrow_array("SELECT subject FROM sslkey LEFT JOIN sslcrt USING(certid) WHERE sslkey.hashkey = ?", {}, $keyhash);
-		return sprintf("%s: SSL private key was already imported: subject=%s", $c->cmd, $subj || "(null)");
+		printf("%s ignored: cert=KEY, error=already imported, subject=%s\n", $c->cmd, $subj || "(null)");
+		return;
 	} # NOT REACHABLE #
 
 	$dbh->begin_work;
@@ -437,13 +440,16 @@ sub import_key($$$) {
 	}, {}, $keyhash, $keyhash);
 	if(  !defined $certid  )  {
 		$dbh->commit;
-		return sprintf("%s: SSL private key cloud't be imported: no CSR/CERT found: hash=%s", $c->cmd, $keyhash);
+		printf("%s ignored: cert=KEY, error=couldn't be imported by no CSR/CRT found: hash=%s\n", $c->cmd, $keyhash);
+		return;
 	} # NOT REACHABLE #
 
 	$dbh->do("INSERT INTO sslkey (certid, keytext, hashkey) VALUES (?, ?, ?)", {}, $certid, $key, $keyhash);
 
 	$dbh->commit;
-	return sprintf("%s: SSL private key was imported successfully: certid=%d", $c->cmd, $certid);
+
+	printf("%s successfully: cert=KEY, certid=%d\n", $c->cmd, $certid);
+	return;
 } # import_key
 
 sub import_crt($$$) {
@@ -454,11 +460,13 @@ sub import_crt($$$) {
 	my $cn           = get_cn_from_subject($subj);
 
 	if(  $cn eq ""  )  {
-		return sprintf("%s: Not Supported non-CommonName SSL public key: subject=%s", $c->cmd, $subj);
+		printf("%s ignored: cert=CRT, error=Non CommonName supported, subject=%s\n", $c->cmd, $subj);
+		return;
 	} # NOT REACHABLE #
 
 	if(  $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslcrt WHERE hashkey = ?)", {}, $crthash)  )  {
-		return sprintf("%s: SSL public key was already imported: subject=%s", $c->cmd, $subj);
+		printf("%s ignored: cert=CRT, error=already imported, subject=%s\n", $c->cmd, $subj);
+		return;
 	} # NOT REACHABLE #
 
 	$dbh->begin_work;
@@ -478,7 +486,8 @@ sub import_crt($$$) {
 
 	$dbh->commit;
 
-	return sprintf("%s: SSL public key was imported successfully: subject=%s", $c->cmd, $subj);
+	printf("%s successfully: cert=CRT, subject=%s\n", $c->cmd, $subj);
+	return;
 } # import_crt
 
 sub import {
@@ -496,10 +505,10 @@ sub import {
 
 	my $mark  = $dmark ? ($c->options->{unmark} ? "f" : "t") : ($c->options->{mark} ? "t" : "f");
 
-	my @ret;
 	foreach  my $file  ( @{$c->argv} )  {
 		if(not  -f $file  )  {
-			return sprintf("File in Certificates required(%s).", $file);
+			printf("%s ignored: error=no file found, file='%s'\n", $c->cmd, $file);
+			next;
 		} # NOT REACHABLE #
 
 		my $fh = new IO::File($file, "r")   or  die sprintf("cannot read file(%s): %s", $file, $!);
@@ -527,9 +536,9 @@ sub import {
 			$crt .= $_  if(  $crt ne ""  );
 
 			if(  m|^-----END\s+\Q${header}\E\s*-----$|  )  {
-				push( @ret, import_csr($c, $dbh, $csr, $mark) )  if(  $csr ne ""  );
-				push( @ret, import_key($c, $dbh, $key       ) )  if(  $key ne ""  );
-				push( @ret, import_crt($c, $dbh, $crt       ) )  if(  $crt ne ""  );
+				import_csr($c, $dbh, $csr, $mark)  if(  $csr ne ""  );
+				import_key($c, $dbh, $key       )  if(  $key ne ""  );
+				import_crt($c, $dbh, $crt       )  if(  $crt ne ""  );
 				$csr    = "";
 				$key    = "";
 				$crt    = "";
@@ -542,7 +551,7 @@ sub import {
 
 	$dbh->disconnect();
 
-	return join("\n", @ret);
+	return undef;
 } # import
 
 sub export_all($$$$) {
@@ -589,13 +598,13 @@ sub export_all($$$$) {
 
 	$fh->close();
 
-	return sprintf("%s: all certificate keys ware exported successfully: file=%s, csr=%d, key=%d, crt=%d", $c->cmd, $basename, $ncsr, $nkey, $ncrt);
+	printf("%s successfully: all certificate keys ware exported, file=%s, csr=%d, key=%d, crt=%d\n", $c->cmd, $basename, $ncsr, $nkey, $ncrt);
+	return;
 } # export_all
 
 sub export_cert($$$$$$$$$@) {
 	my($c, $dbh, $pubout, $pubmode, $keyout, $keymode, $chainout, $chainmode, $require_fullchain, @argv) = @_;
 
-	my @ret;
 	foreach  my $argv  ( @argv )  {
 		my $pubfh   = new File::Temp(DIR => dirname($pubout),   UNLINK => 1);
 		my $keyfh   = new File::Temp(DIR => dirname($keyout),   UNLINK => 1);
@@ -612,7 +621,7 @@ sub export_cert($$$$$$$$$@) {
 		}
 	
 		if(  !defined $certid || !defined $cn  )  {
-			push @ret, sprintf("%s unsuccessfull: no certificate found: cn=%s, certid=%s", $c->cmd, $cn || "(null)", $certid || "(null)");
+			printf("%s ignored: cn=%s, certid=%s, error=no certificate found\n", $c->cmd, $cn || "(null)", $certid || "(null)");
 			next;
 		} # NOT REACHABLE #
 
@@ -665,10 +674,10 @@ sub export_cert($$$$$$$$$@) {
 		$keyfh->close();
 		$chainfh->close();
 
-		push @ret, sprintf("%s successfully: commonname='%s'(certid=%d), crtfile=%s, keyfile=%s, chainfile=%s", $c->cmd, $cn, $certid, $_pubout, $_keyout, $_chainout);
+		printf("%s successfully: commonname='%s'(certid=%d), crtfile=%s, keyfile=%s, chainfile=%s\n", $c->cmd, $cn, $certid, $_pubout, $_keyout, $_chainout);
 	}
 
-	return join("\n", @ret);
+	return;
 } # export_cert
 
 sub export {
@@ -690,18 +699,17 @@ sub export {
 	my $chainout   = $c->options->{chainout} ? $c->options->{chainout} : "${basename}.chain.crt";
 	my $chainmode  = 0444;
 
-	my $ret;
 	if(  $reuquire_all  )  {
-		$ret = export_all($c, $dbh, $basename, $basemode);
+		export_all($c, $dbh, $basename, $basemode);
 	}  elsif(  @{$c->argv}  )  {
-		$ret = export_cert( $c, $dbh, $pubout, $pubmode, $keyout, $keymode, $chainout, $chainmode, $require_fullchain, @{$c->argv} );
+		export_cert( $c, $dbh, $pubout, $pubmode, $keyout, $keymode, $chainout, $chainmode, $require_fullchain, @{$c->argv} );
 	}  else  {
-		$ret = "no export found";
+		print "no export found\n";
 	}
 
 	$dbh->disconnect();
 
-	return $ret;
+	return undef;
 } # export
 
 sub info {
