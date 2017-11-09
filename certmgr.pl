@@ -471,6 +471,8 @@ sub import_crt($$$) {
 	if(  !defined $certid  )  {
 		$dbh->do("INSERT INTO certificate (commonname, is_active, is_marked) VALUES (?, 't', 'f')", {}, $cn);
 		$certid = $dbh->selectrow_array("SELECT last_insert_rowid() FROM certificate");
+	}  else  {
+		$dbh->do("UPDATE certificate SET is_active = 't' WHERE certid = ?", {}, $certid);
 	}
 	$dbh->do("INSERT INTO sslcrt (certid, subject, issuer, startdate, enddate, crttext, hashkey) VALUES (?, ?, ?, ?, ?, ?, ?)", {}, $certid, $subj, $isue, $start, $end, $crt, $crthash);
 
