@@ -1,0 +1,4 @@
+.certmgrrc
+*.crt
+*.csr
+*.key
