@@ -724,6 +724,7 @@ sub info_file($$$) {
 		$hash     = openssl_req_pubkey($text);
 	}  elsif(  $text =~ m|^-----\s*BEGIN\s+PRIVATE\s+KEY\s*-----$|m  )  {
 		$certkind = "KEY";
+		$cn       = "(N/A)";
 		$hash     = openssl_pkey_pubkey($text);
 	}  elsif(  $text =~ m|^-----\s*BEGIN\s+CERTIFICATE\s*-----$|m )  {
 		$certkind = "CRT";
@@ -732,6 +733,7 @@ sub info_file($$$) {
 		($startdate, $enddate) = openssl_x509_date($text);
 		$hash     = openssl_x509_pubkey($text);
 	}  else  {
+		$cn       = "(N/A)";
 		$certkind = "UNKNOWN";
 	}
 
