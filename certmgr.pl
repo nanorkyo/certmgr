@@ -26,6 +26,7 @@ sub setup {
 		req    => "Make a CSR and KEY",
 		import => "Import CSR/KEY/CRT",
 		export => "Export CSR/KEY/CRT",
+		info   => "Display CSR/KEY/CRT information",
 	});
 	foreach  my $config (  CONFIGFILES  )  {
 		next  unless(  -f $config  );
@@ -698,3 +699,43 @@ sub export {
 	return $ret;
 } # export
 
+sub info {
+	my $c    = shift;
+	my $dbh  = $c->stash->{DBH};
+
+	init($c)  if(  $c->stash->{DBVER} == 0  );
+
+	foreach  my $argv  ( @{$c->argv} )  {
+		my $where;
+		if(  $argv =~ /^\d+$/  )  {
+			$where = "certid";
+		}  else  {
+			$where = "commonname";
+		}
+		my($certid, $cn, $active, $marked, $subject, $issuer, $startdate, $enddate, $incrt , $incsr, $inkey) = $dbh->selectrow_array(sprintf(q{
+			SELECT certid, commonname, is_active, is_marked, sslcrt.subject, issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL
+			  FROM certificate
+			  LEFT JOIN sslcrt USING(certid)
+			  LEFT JOIN sslcsr USING(certid)
+			  LEFT JOIN sslkey USING(certid)
+			 WHERE %s = ?
+		}, $where), {}, $argv);
+
+		if(  !defined $cn  )  {
+			printf "No certificate found: %s=%s", $where, $argv;
+			next;
+		} # NOT REACHABLE #
+
+		printf "Certificate ID:		%d\n", $certid;
+		printf "CommonName:		%s\n", $cn;
+		printf "Active Certificate:	%s\n", ($active eq "t" ? "YES" : "no");
+		printf "Marked Certificate:	%s\n", ($marked eq "t" ? "YES" : "no");
+		printf "Stored Certificate:	%s\n", join(" ", ($incrt ? ("CRT") : ()),  ($incsr ? ("CSR") : ()), ($inkey ? ("KEY"): ())) || "!!!BUG!!!";
+		printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
+		printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
+		printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "$startdate - $enddate" : "N/A");
+		printf "\n";
+	}
+
+	return undef;
+} # info
