@@ -398,9 +398,9 @@ sub import_csr($$$$) {
 	$dbh->begin_work;
 
 	my $certid = $dbh->selectrow_array(q{
-		SELECT certid FROM sslcsr WHERE hashkey = ?
-		 UNION
 		SELECT certid FROM sslcrt WHERE hashkey = ?
+		 UNION
+		SELECT certid FROM sslkey WHERE hashkey = ?
 	}, {}, $csrhash, $csrhash);
 	if(  !defined $certid  )  {
 		$dbh->do("INSERT INTO certificate (commonname, is_active, is_marked) VALUES (?, 'f', ?)", {}, $cn, $mark);
@@ -430,9 +430,9 @@ sub import_key($$$) {
 	$dbh->begin_work;
 
 	my $certid = $dbh->selectrow_array(q{
-		SELECT certid FROM sslcsr WHERE hashkey = ?
-		 UNION
 		SELECT certid FROM sslcrt WHERE hashkey = ?
+		 UNION
+		SELECT certid FROM sslcsr WHERE hashkey = ?
 	}, {}, $keyhash, $keyhash);
 	if(  !defined $certid  )  {
 		$dbh->commit;
@@ -465,7 +465,7 @@ sub import_crt($$$) {
 	my $certid = $dbh->selectrow_array(q{
 		SELECT certid FROM sslcsr WHERE hashkey = ?
 		 UNION
-		SELECT certid FROM sslcrt WHERE hashkey = ?
+		SELECT certid FROM sslkey WHERE hashkey = ?
 	}, {}, $crthash, $crthash);
 	if(  !defined $certid  )  {
 		$dbh->do("INSERT INTO certificate (commonname, is_active, is_marked) VALUES (?, 't', 'f')", {}, $cn);
