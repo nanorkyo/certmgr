@@ -768,6 +768,10 @@ sub info_repo($$$) {
 		  LEFT JOIN sslcsr USING(certid)
 		  LEFT JOIN sslkey USING(certid)
 		 WHERE %s = ?
+		 ORDER BY CASE WHEN is_active = 't' THEN 0 ELSE 1 END ASC,
+		          CASE WHEN is_marked = 't' THEN 0 ELSE 1 END ASC,
+			  certid DESC
+		 LIMIT 1
 	}, $where), {}, $argv);
 
 	if(  !defined $cn  )  {
