@@ -374,7 +374,7 @@ sub list {
 	my @column;
 	foreach ( @$list ) {
 		for( my $i = 0; $i < @$_; $i++ )  {
-			$column[$i] = min(max(length($_->[$i]), $column[$i]), 32);
+			$column[$i] = min(max(length($_->[$i]), $column[$i]), ($i == 1 ? 64 : 32));
 		}
 	}
 	my @format;
