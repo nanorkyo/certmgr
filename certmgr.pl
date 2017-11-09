@@ -557,8 +557,8 @@ sub export_all($$$$) {
 	   $sth->bind_columns(\$certid);
 
 	while(   $sth->fetch  )  {
-		my($csrtext, $keytext, $crttext) = $dbh->selectrow_array(q{
-			SELECT csrtext, keytext, crttext
+		my($subject, $issuer, $csrtext, $keytext, $crttext) = $dbh->selectrow_array(q{
+			SELECT COALESCE(sslcrt.subject, sslcsr.subject), COALESCE(issuer, 'N/A'), csrtext, keytext, crttext
 			  FROM certificate
 			  LEFT JOIN sslcsr USING(certid) 
 			  LEFT JOIN sslkey USING(certid) 
@@ -566,6 +566,8 @@ sub export_all($$$$) {
 			 WHERE certid = ?
 		}, {}, $certid);
 
+		$fh->printf("subject=%s\n", $subject)  if(  defined $subject  );
+		$fh->printf("issuer =%s\n", $issuer)   if(  defined $issuer   );
 		if(  defined $csrtext  )  {
 			$fh->print($csrtext);
 			$ncsr++;
@@ -578,6 +580,7 @@ sub export_all($$$$) {
 			$fh->print($crttext);
 			$ncrt++;
 		}
+		$fh->print("\n");
 	}
 	$sth->finish;
 
