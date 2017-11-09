@@ -176,7 +176,7 @@ sub get_cn_from_subject($) {
 	} # NOT REACHABLE #
 } # get_cn_from_subject
 
-sub get_subject_from_cn {
+sub get_subject_from_cn($$) {
 	my($dbh, $cn) = @_;
 	return $dbh->selectrow_array(q{SELECT subject FROM certificate INNER JOIN sslcsr USING(certid) WHERE commonname = ? ORDER BY created DESC LIMIT 1}, {}, $cn);
 } # get_subject_from_cn
@@ -712,6 +712,80 @@ sub export {
 	return undef;
 } # export
 
+sub info_file($$$) {
+	my($c, $dbh, $file) = @_;
+	my $text = readfile($file);
+
+	my($certkind, $certid, $cn, $subject, $issuer, $startdate, $enddate, $hash);
+	if(  $text =~ m|^-----\s*BEGIN\s+CERTIFICATE\s+REQUEST\s*-----$|m  )  {
+		$certkind = "CSR";
+		$subject  = openssl_req_subject($text);
+		$cn       = get_cn_from_subject($subject);
+		$hash     = openssl_req_pubkey($text);
+	}  elsif(  $text =~ m|^-----\s*BEGIN\s+PRIVATE\s+KEY\s*-----$|m  )  {
+		$certkind = "KEY";
+		$hash     = openssl_pkey_pubkey($text);
+	}  elsif(  $text =~ m|^-----\s*BEGIN\s+CERTIFICATE\s*-----$|m )  {
+		$certkind = "CRT";
+		($subject, $issuer)    = openssl_x509_subject($text);
+		$cn       = get_cn_from_subject($subject);
+		($startdate, $enddate) = openssl_x509_date($text);
+		$hash     = openssl_x509_pubkey($text);
+	}  else  {
+		$certkind = "UNKNOWN";
+	}
+
+	if(  defined $hash  )  {
+		$certid = $dbh->selectrow_array(q{
+			SELECT certid FROM sslcrt WHERE hashkey = ?
+			 UNION
+			SELECT certid FROM sslcsr WHERE hashkey = ?
+			 UNION
+			SELECT certid FROM sslkey WHERE hashkey = ?
+		}, {}, $hash, $hash, $hash);
+	}
+
+	printf "Certificate ID:		%s\n", (defined $certid ? $certid : "N/A");
+	printf "CommonName:		%s\n", $cn;
+	printf "Active Certificate:	N/A\n";
+	printf "Marked Certificate:	N/A\n";
+	printf "Stored Certificate:	%s\n", $certkind;
+	printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
+	printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
+	printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "${startdate}Z - ${enddate}Z" : "N/A");
+	printf "\n";
+} # info_file
+
+sub info_repo($$$) {
+	my($c, $dbh, $argv) = @_;
+
+	my $where = ($argv =~ /^\d+$/) ? "certid" : "commonname";
+
+	my($certid, $cn, $active, $marked, $subject, $issuer, $startdate, $enddate, $incrt , $incsr, $inkey) = $dbh->selectrow_array(sprintf(q{
+		SELECT certid, commonname, is_active, is_marked, sslcrt.subject, issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL
+		  FROM certificate
+		  LEFT JOIN sslcrt USING(certid)
+		  LEFT JOIN sslcsr USING(certid)
+		  LEFT JOIN sslkey USING(certid)
+		 WHERE %s = ?
+	}, $where), {}, $argv);
+
+	if(  !defined $cn  )  {
+		printf "No certificate found: %s=%s", $where, $argv;
+		next;
+	} # NOT REACHABLE #
+
+	printf "Certificate ID:		%d\n", $certid;
+	printf "CommonName:		%s\n", $cn;
+	printf "Active Certificate:	%s\n", ($active eq "t" ? "YES" : "no");
+	printf "Marked Certificate:	%s\n", ($marked eq "t" ? "YES" : "no");
+	printf "Stored Certificate:	%s\n", join(" ", ($incrt ? ("CRT") : ()),  ($incsr ? ("CSR") : ()), ($inkey ? ("KEY"): ())) || "!!!BUG!!!";
+	printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
+	printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
+	printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "$startdate - $enddate" : "N/A");
+	printf "\n";
+} # info_repo
+
 sub info {
 	my $c    = shift;
 	my $dbh  = $c->stash->{DBH};
@@ -719,35 +793,11 @@ sub info {
 	init($c)  if(  $c->stash->{DBVER} == 0  );
 
 	foreach  my $argv  ( @{$c->argv} )  {
-		my $where;
-		if(  $argv =~ /^\d+$/  )  {
-			$where = "certid";
+		if(  -f $argv  )  {
+			info_file($c, $dbh, $argv);
 		}  else  {
-			$where = "commonname";
+			info_repo($c, $dbh, $argv);
 		}
-		my($certid, $cn, $active, $marked, $subject, $issuer, $startdate, $enddate, $incrt , $incsr, $inkey) = $dbh->selectrow_array(sprintf(q{
-			SELECT certid, commonname, is_active, is_marked, sslcrt.subject, issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL
-			  FROM certificate
-			  LEFT JOIN sslcrt USING(certid)
-			  LEFT JOIN sslcsr USING(certid)
-			  LEFT JOIN sslkey USING(certid)
-			 WHERE %s = ?
-		}, $where), {}, $argv);
-
-		if(  !defined $cn  )  {
-			printf "No certificate found: %s=%s", $where, $argv;
-			next;
-		} # NOT REACHABLE #
-
-		printf "Certificate ID:		%d\n", $certid;
-		printf "CommonName:		%s\n", $cn;
-		printf "Active Certificate:	%s\n", ($active eq "t" ? "YES" : "no");
-		printf "Marked Certificate:	%s\n", ($marked eq "t" ? "YES" : "no");
-		printf "Stored Certificate:	%s\n", join(" ", ($incrt ? ("CRT") : ()),  ($incsr ? ("CSR") : ()), ($inkey ? ("KEY"): ())) || "!!!BUG!!!";
-		printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
-		printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
-		printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "$startdate - $enddate" : "N/A");
-		printf "\n";
 	}
 
 	return undef;
