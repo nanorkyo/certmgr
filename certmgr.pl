@@ -397,7 +397,11 @@ sub import_csr($$$$) {
 
 	$dbh->begin_work;
 
-	my $certid = $dbh->selectrow_array("SELECT certid FROM sslcrt WHERE hashkey = ?", {}, $csrhash);
+	my $certid = $dbh->selectrow_array(q{
+		SELECT certid FROM sslcsr WHERE hashkey = ?
+		 UNION
+		SELECT certid FROM sslcrt WHERE hashkey = ?
+	}, {}, $csrhash, $csrhash);
 	if(  !defined $certid  )  {
 		$dbh->do("INSERT INTO certificate (commonname, is_active, is_marked) VALUES (?, 'f', ?)", {}, $cn, $mark);
 		$certid = $dbh->selectrow_array("SELECT last_insert_rowid() FROM certificate");
@@ -425,7 +429,11 @@ sub import_key($$$) {
 
 	$dbh->begin_work;
 
-	my $certid = $dbh->selectrow_array("SELECT certid FROM sslcsr WHERE hashkey = ? UNION SELECT certid FROM sslcrt WHERE hashkey = ? ", {}, $keyhash, $keyhash);
+	my $certid = $dbh->selectrow_array(q{
+		SELECT certid FROM sslcsr WHERE hashkey = ?
+		 UNION
+		SELECT certid FROM sslcrt WHERE hashkey = ?
+	}, {}, $keyhash, $keyhash);
 	if(  !defined $certid  )  {
 		$dbh->commit;
 		return sprintf("%s: SSL private key cloud't be imported: no CSR/CERT found: hash=%s", $c->cmd, $keyhash);
@@ -454,7 +462,11 @@ sub import_crt($$$) {
 
 	$dbh->begin_work;
 
-	my $certid = $dbh->selectrow_array("SELECT certid FROM sslcrt WHERE hashkey = ?", {}, $crthash);
+	my $certid = $dbh->selectrow_array(q{
+		SELECT certid FROM sslcsr WHERE hashkey = ?
+		 UNION
+		SELECT certid FROM sslcrt WHERE hashkey = ?
+	}, {}, $crthash, $crthash);
 	if(  !defined $certid  )  {
 		$dbh->do("INSERT INTO certificate (commonname, is_active, is_marked) VALUES (?, 't', 'f')", {}, $cn);
 		$certid = $dbh->selectrow_array("SELECT last_insert_rowid() FROM certificate");
