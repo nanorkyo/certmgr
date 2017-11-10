@@ -255,13 +255,15 @@ sub req {
 
 	init($c)  if(  $c->stash->{DBVER} == 0  );
 
-	$c->getopt("mark|m", "unmark|u", "type|t=s", "sign|s=s");	# XXX: Do error handle #
+	$c->getopt("mark|m", "unmark|u", "type|t=s", "sign|s=s", "sans|san=s", "ocsp-must-staple");	# XXX: Do error handle #
 
 	my $cn;
 	my($csr, $key);
-	my $subj  = shift(@{$c->argv})  || "";
-	my $type  = $c->options->{type} || "";
-	my $sign  = $c->options->{sign} || "";
+	my $subj     = shift(@{$c->argv})  || "";
+	my $type     = $c->options->{type} || "";
+	my $sign     = $c->options->{sign} || "";
+	my @sans     = split(/,/, $c->options->{sans});
+	my $ocspmust = $c->options->{"ocsp-must-staple"};
 
 	my $dmark = undef;
 	$dmark = 1  if(  $c->config->{DefaultMarked} =~ m/(?:[Yy][Ee][Ss])|(?:[Tt][Rr][Uu][Ee])|(?:[Oo][Nn])|(?:1)/  );
@@ -291,21 +293,38 @@ sub req {
 		return sprintf("%s not supported certificate signature(%s)", $c->cmd, $sign);
 	} # NOT REACHABLE #
 
-	print "cn:       $cn\n";
-	print "subject:  $subj\n";
-	print "type:     $type\n";
-	print "sign:     $sign\n";
-	print "markable: $mark\n";
+	printf "cn:               %s\n", $cn;
+	printf "subject:          %s\n", $subj;
+	printf "sans:             %s\n", join(", ", @sans);
+	printf "type:             %s\n", $type;
+	printf "sign:             %s\n", $sign;
+	printf "markable:         %s\n", ($mark ? "Yes" : "No");
+	printf "OCSP Must Staple: %s (%s fail)\n", ( $ocspmust ? ("Yes", "hard") : ("No", "soft") );
 
 	my $csrfile = new File::Temp(UNLINK => 0);
 	   $csrfile->unlink_on_destroy(1);
 	my $keyfile = new File::Temp(UNLINK => 0);
 	   $keyfile->unlink_on_destroy(1);
+	my $confile = new File::Temp(UNLINK => 0);
+	   $confile->unlink_on_destroy(1);
 
+	   $confile->print("[distinguished_name]\n");
+	   $confile->print("[req]\n");
+	   $confile->print("distinguished_name = distinguished_name\n");
+
+	if(  @sans || $ocspmust  )  {
+		$confile->print("req_extensions     = req_extensions\n");
+		$confile->print("[req_extensions]\n");
+
+		if(  @sans  )  {
+			$confile->printf("subjectAltName = %s\n", join(", ", map { "DNS:$_" } @sans));
+		}
+		if(  $ocspmust  )  {
+			$confile->print("1.3.6.1.5.5.7.1.24=DER:30:03:02:01:05\n");
+		}
+	}
 	# XXX: must support ECDSA.
-	# XXX: must support SANs.
-	# XXX: must support OCSP Must-Staple
-	system("openssl", "req", "-new", "-newkey", $type, "-$sign", "-nodes", "-subj", $subj, "-out", $csrfile->filename, "-keyout", $keyfile->filename);
+	system("openssl", "req", "-new", "-newkey", $type, "-$sign", "-nodes", "-subj", $subj, "-out", $csrfile->filename, "-keyout", $keyfile->filename, "-config", $confile->filename);
 
 	$csr = join("", <$csrfile>);
 	$key = join("", <$keyfile>);

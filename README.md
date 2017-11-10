@@ -21,7 +21,7 @@
 * ＳＳＬ証明書の詳細表示
   * `certmgr info <証明書ＩＤ|コモンネーム|ファイル名>[<証明書ＩＤ|コモンネーム|ファイル名>...]`
 * ＣＳＲ作成
-  * `certmgr req [-m][-u][-t TYPE][-s SIGN] <サブジェクト|コモンネーム>`
+  * `certmgr req [-m][-u][-t TYPE][-s SIGN][--sans=<ドメイン>[,<ドメイン>...][--ocsp-must-staple] <サブジェクト|コモンネーム>`
 * ＳＳＬ証明書のインポート（ＣＳＲ、公開鍵、秘密鍵、中間証明書問わず）
   * `certmgr import [-m][-u] <証明書ファイル名> [<証明書ファイル名>...]`
 * ＳＳＬ証明書のエクスポート（ＣＳＲ、公開鍵、秘密鍵、中間証明書問わず）
@@ -39,6 +39,10 @@
   * ＣＳＲの鍵種別の指定（`rsa:2048`, `rsa:1024`, `rsa:3072`, `rsa:4096`, `prime256r1`）
 * `-s SIGN` or `--sign=SIGN`
   * ＣＳＲの署名種別の指定（`sha256`, `sha`＝`sha1`, `sha384`, `sha512`）
+* `--sans=ドメイン`
+  * カンマ区切りで複数のＳＡＮｓ（Subject Alternative Names）を指定する。
+* `--ocsp-must-staple`
+  * ＯＣＳＰ Ｍｕｓｔ－Ｓｔａｐｌｅを有効にする。証明書のオンライン失効確認に失敗すると一時的に失効扱い（hard fail）となります。
 * `-a`
   * 証明書リポジトリ中のすべての証明書を対象とします。出力先パス名を `-b` オプションで指定します。
 * `-r`
@@ -109,8 +113,6 @@ certmgr は設定ファイルを必要とします。
 
 ### 優先度高バグ
 * ＥＣＤＳＡに対応していません。
-* ＳＡＮｓ（Subject Alternate Names）に対応していません。
-* ＯＣＳＰ Ｍｕｓｔ－Ｓｔａｐｌｅ には対応していません。
 
 ### 優先度低バグ
 * 証明書チェインの検証は行っていません。
@@ -150,3 +152,4 @@ certmgr は設定ファイルを必要とします。
 * [openssl req](https://wiki.ninth-nine.com/OpenSSL/req)
 * [openssl x509](https://wiki.ninth-nine.com/OpenSSL/x509)
 * [X.509証明書の検証手順とありがちな脆弱性](https://qiita.com/n-i-e/items/35cba71d04b9123e676c)
+* [OCSP Must-Staple と OCSP Multi-Stapling、及び OneCRL](https://www.cybertrust.ne.jp/journal/ocsp-must-staple-ocsp-multi-stapling-onecrl.html)
