@@ -716,22 +716,25 @@ sub info_file($$$) {
 	my($c, $dbh, $file) = @_;
 	my $text = readfile($file);
 
-	my($certkind, $certid, $cn, $subject, $issuer, $startdate, $enddate, $hash);
+	my($certkind, $certid, $cn, $subject, $issuer, $startdate, $enddate, $hash, $inrepo);
 	if(  $text =~ m|^-----\s*BEGIN\s+CERTIFICATE\s+REQUEST\s*-----$|m  )  {
 		$certkind = "CSR";
 		$subject  = openssl_req_subject($text);
 		$cn       = get_cn_from_subject($subject);
 		$hash     = openssl_req_pubkey($text);
+		$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslcsr WHERE hashkey = ?)", {}, $hash);
 	}  elsif(  $text =~ m|^-----\s*BEGIN\s+PRIVATE\s+KEY\s*-----$|m  )  {
 		$certkind = "KEY";
 		$cn       = "(N/A)";
 		$hash     = openssl_pkey_pubkey($text);
+		$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslkey WHERE hashkey = ?)", {}, $hash);
 	}  elsif(  $text =~ m|^-----\s*BEGIN\s+CERTIFICATE\s*-----$|m )  {
 		$certkind = "CRT";
 		($subject, $issuer)    = openssl_x509_subject($text);
 		$cn       = get_cn_from_subject($subject);
 		($startdate, $enddate) = openssl_x509_date($text);
 		$hash     = openssl_x509_pubkey($text);
+		$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslcrt WHERE hashkey = ?)", {}, $hash);
 	}  else  {
 		$cn       = "(N/A)";
 		$certkind = "UNKNOWN";
@@ -751,7 +754,7 @@ sub info_file($$$) {
 	printf "CommonName:		%s\n", $cn;
 	printf "Active Certificate:	N/A\n";
 	printf "Marked Certificate:	N/A\n";
-	printf "Stored Certificate:	%s\n", $certkind;
+	printf "Stored Certificate:	%s (%s)\n", $certkind, ($inrepo ? "already imported" : "not yet imported");
 	printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
 	printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
 	printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "${startdate}Z - ${enddate}Z" : "N/A");
