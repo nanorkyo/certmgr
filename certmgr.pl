@@ -714,7 +714,7 @@ sub export {
 
 	init($c)  if(  $c->stash->{DBVER} == 0  );
 
-	$c->getopt("basename|base|b=s", "pubout=s", "keyout=s", "chainout=s", "fullchain|recursive|r", "all|a");
+	$c->getopt("basename|base|back|backup|b=s", "pubout=s", "keyout=s", "chainout=s", "fullchain|full-chain|recursive|r", "all|a");
 
 	my $reuquire_all      = $c->options->{all};
 	my $require_fullchain = $c->options->{fullchain};
