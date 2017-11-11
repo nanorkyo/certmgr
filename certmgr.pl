@@ -284,7 +284,8 @@ sub req {
 	} # NOT REACHABLE #
 
 	$type = "rsa:2048"  if(  $type eq ""  );
-	if(  $type ne "rsa:1024" && $type ne "rsa:2048" && $type ne "rsa:3072" && $type ne "rsa:4096" && $type ne "prime256r1"  )  {
+	if(  $type ne "rsa:1024"   && $type ne "rsa:2048"  && $type ne "rsa:3072"  && $type ne "rsa:4096"
+	  && $type ne "prime256v1" && $type ne "secp256r1" && $type ne "secp384r1" && $type ne "secp521r1"  )  {
 		return sprintf("%s not supported certificate type(%s)", $c->cmd, $type);
 	} # NOT REACHABLE #
 
@@ -323,8 +324,16 @@ sub req {
 			$confile->print("1.3.6.1.5.5.7.1.24=DER:30:03:02:01:05\n");
 		}
 	}
-	# XXX: must support ECDSA.
-	system("openssl", "req", "-new", "-newkey", $type, "-$sign", "-nodes", "-subj", $subj, "-out", $csrfile->filename, "-keyout", $keyfile->filename, "-config", $confile->filename);
+
+	if(  $type =~ /rsa:/  )  {
+		system("openssl", "req", "-new", "-newkey", $type, "-$sign", "-nodes", "-subj", $subj, "-out", $csrfile->filename, "-keyout", $keyfile->filename, "-config", $confile->filename);
+	} elsif(  $type =~ /prime256v1|secp256r1|secp384r1|secp521r1/  )  {
+		my $ecfile = new File::Temp(UNLINK => 0);
+		   $ecfile->unlink_on_destroy(1);
+		system("openssl", "ecparam", "-name", $type, "-param_enc", "named_curve", "-out", $ecfile->filename);
+		system("openssl", "req", "-new", "-newkey", "ec:$ecfile", "-$sign", "-nodes", "-subj", $subj, "-out", $csrfile->filename, "-keyout", $keyfile->filename, "-config", $confile->filename);
+		   $ecfile->close();
+	}
 
 	$csr = join("", <$csrfile>);
 	$key = join("", <$keyfile>);

@@ -36,7 +36,7 @@
 * `-u`
   * 作成されるＣＳＲを「マーキングしません」。
 * `-t TYPE` or `--type=TYPE`
-  * ＣＳＲの鍵種別の指定（`rsa:2048`, `rsa:1024`, `rsa:3072`, `rsa:4096`, `prime256r1`）
+  * ＣＳＲの鍵種別の指定（`rsa:2048`, `rsa:1024`, `rsa:3072`, `rsa:4096`, `prime256v1`, `secp256r1`, `secp384r1`, `secp521r1`）
 * `-s SIGN` or `--sign=SIGN`
   * ＣＳＲの署名種別の指定（`sha256`, `sha`＝`sha1`, `sha384`, `sha512`）
 * `--sans=ドメイン`
