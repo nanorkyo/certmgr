@@ -22,12 +22,12 @@ App::Rad->run;
 sub setup {
 	my $c = shift;
 	$c->register_commands( {
-		init   => "Init SSL Certificates Repogitory.",
-		list   => "List common names and/or certificates",
-		req    => "Make a CSR and KEY",
-		import => "Import CSR/KEY/CRT",
-		export => "Export CSR/KEY/CRT",
-		info   => "Display CSR/KEY/CRT information",
+		init     => "Init SSL Certificates Repogitory.",
+		list     => "List common names and/or certificates",
+		generate => "Generate a CSR(and KEY)",
+		import   => "Import CSR/KEY/CRT",
+		export   => "Export CSR/KEY/CRT",
+		info     => "Display CSR/KEY/CRT information",
 	});
 
 	my $config;
@@ -259,7 +259,7 @@ sub init {
 	return undef;
 } # init
 
-sub req {
+sub generate {
 	my $c   = shift;
 	my $dbh = $c->stash->{DBH};
 
@@ -367,7 +367,7 @@ sub req {
 	print $csr;
 
 	return sprintf("%s successfully: certid=%d, subject=%s", $c->cmd, $certid, $subj);
-} # req #
+} # generate #
 
 sub max($$) { return $_[0] > $_[1] ? $_[0] : $_[1]; }
 sub min($$) { return $_[0] < $_[1] ? $_[0] : $_[1]; }
