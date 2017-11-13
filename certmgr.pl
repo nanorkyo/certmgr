@@ -138,19 +138,21 @@ sub openssl_req_subject($) {
 sub openssl_req_pubkey($) {
 	my $pem    = shift;
 	my $pubkey = filtcmd($pem, qw{openssl req -noout -pubkey});
-	return sha256_base64($pubkey);
+	my $pubder = filtcmd($pubkey, qw{openssl pkey -pubin -outform der});
+	return sha256_base64($pubder);
 } # openssl_req_pubkey
 
 sub openssl_x509_pubkey($) {
 	my $pem    = shift;
 	my $pubkey = filtcmd($pem, qw{openssl x509 -noout -pubkey});
-	return sha256_base64($pubkey);
+	my $pubder = filtcmd($pubkey, qw{openssl pkey -pubin -outform der});
+	return sha256_base64($pubder);
 } # openssl_x509_pubkey
 
 sub openssl_pkey_pubkey($) {
 	my $pem    = shift;
-	my $pubkey = filtcmd($pem, qw{openssl pkey -pubout});
-	return sha256_base64($pubkey);
+	my $pubder = filtcmd($pem, qw{openssl pkey -pubout -outform der});
+	return sha256_base64($pubder);
 } # openssl_pkey_pubkey
 
 sub openssl_x509_date($) {
@@ -794,6 +796,7 @@ sub info_file($$$) {
 	printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
 	printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
 	printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "${startdate}Z - ${enddate}Z" : "N/A");
+	printf "HPKP type Hash Value:	%s\n", $hash;
 	printf "\n";
 } # info_file
 
@@ -802,8 +805,8 @@ sub info_repo($$$) {
 
 	my $where = ($argv =~ /^\d+$/) ? "certid" : "commonname";
 
-	my($certid, $cn, $active, $marked, $subject, $issuer, $startdate, $enddate, $incrt , $incsr, $inkey) = $dbh->selectrow_array(sprintf(q{
-		SELECT certid, commonname, is_active, is_marked, sslcrt.subject, issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL
+	my($certid, $cn, $active, $marked, $subject, $issuer, $startdate, $enddate, $incrt , $incsr, $inkey, $hash) = $dbh->selectrow_array(sprintf(q{
+		SELECT certid, commonname, is_active, is_marked, sslcrt.subject, issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL, COALESCE(sslcrt.hashkey, sslcsr.hashkey, sslkey.hashkey)
 		  FROM certificate
 		  LEFT JOIN sslcrt USING(certid)
 		  LEFT JOIN sslcsr USING(certid)
@@ -828,6 +831,7 @@ sub info_repo($$$) {
 	printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
 	printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
 	printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "$startdate - $enddate" : "N/A");
+	printf "HPKP type Hash Value:	%s\n", $hash;
 	printf "\n";
 } # info_repo
 
