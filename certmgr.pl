@@ -15,6 +15,7 @@ use File::Basename;
 
 use POSIX "strftime";
 use Digest::SHA "sha256_base64";
+use Getopt::Long qw(:config posix_default no_ignore_case gnu_compat);
 
 App::Rad->run;
 
@@ -28,12 +29,19 @@ sub setup {
 		export => "Export CSR/KEY/CRT",
 		info   => "Display CSR/KEY/CRT information",
 	});
-	foreach  my $config (  CONFIGFILES  )  {
-		next  unless(  -f $config  );
 
-		$c->stash->{Config} = $config;
-		last;
+	my $config;
+	GetOptions ("config|c=s" => \$config);	# XXX: Do error handling #
+
+	my $config;
+	if(  $config eq ""  )  {
+		foreach  (  CONFIGFILES  )  {
+			next  unless(  -r  );
+			$config = $_;
+			last;
+		}
 	}
+	$c->stash->{Config} = $config;
 } # setup #
 
 sub pre_process {
@@ -46,7 +54,7 @@ sub pre_process {
 	my $dbuser = $c->config->{UserName} || "";
 	my $dbpass = $c->config->{PassWord} || "";
 	if(  $dbsrc eq ""  )  {
-		return "setup your certmgrrc file.";
+		die "setup your certmgrrc file.";
 	} # NOT REACHABLE #
 	else  {
 		umask 0077;
@@ -534,7 +542,7 @@ sub import {
 	my $mark  = $dmark ? ($c->options->{unmark} ? "f" : "t") : ($c->options->{mark} ? "t" : "f");
 
 	foreach  my $file  ( @{$c->argv} )  {
-		if(not  -f $file  )  {
+		if(not  -r $file  )  {
 			printf("%s ignored: error=no file found, file='%s'\n", $c->cmd, $file);
 			next;
 		} # NOT REACHABLE #
@@ -830,7 +838,7 @@ sub info {
 	init($c)  if(  $c->stash->{DBVER} == 0  );
 
 	foreach  my $argv  ( @{$c->argv} )  {
-		if(  -f $argv  )  {
+		if(  -r $argv  )  {
 			info_file($c, $dbh, $argv);
 		}  else  {
 			info_repo($c, $dbh, $argv);

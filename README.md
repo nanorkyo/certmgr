@@ -17,16 +17,16 @@
 
 ## 使い方
 * ＳＳＬ証明書一覧
-  * `certmgr list [-r][-o <ORDER[,ORDER]...>][[-o <ORDER>]...]`
+  * `certmgr [-c config_file] list [-r][-o <ORDER[,ORDER]...>][[-o <ORDER>]...]`
 * ＳＳＬ証明書の詳細表示
-  * `certmgr info <証明書ＩＤ|コモンネーム|ファイル名>[<証明書ＩＤ|コモンネーム|ファイル名>...]`
+  * `certmgr [-c config_file] info <証明書ＩＤ|コモンネーム|ファイル名>[<証明書ＩＤ|コモンネーム|ファイル名>...]`
 * ＣＳＲ作成
-  * `certmgr req [-m][-u][-t TYPE][-s SIGN][--sans=<ドメイン>[,<ドメイン>...][--ocsp-must-staple] <サブジェクト|コモンネーム>`
+  * `certmgr [-c config_file] req [-m][-u][-t TYPE][-s SIGN][--sans=<ドメイン>[,<ドメイン>...][--ocsp-must-staple] <サブジェクト|コモンネーム>`
 * ＳＳＬ証明書のインポート（ＣＳＲ、公開鍵、秘密鍵、中間証明書問わず）
-  * `certmgr import [-m][-u] <証明書ファイル名> [<証明書ファイル名>...]`
+  * `certmgr [-c config_file] import [-m][-u] <証明書ファイル名> [<証明書ファイル名>...]`
 * ＳＳＬ証明書のエクスポート（ＣＳＲ、公開鍵、秘密鍵、中間証明書問わず）
-  * `certmrt export [-a][-b <バックアップ先パス名>]`
-  * `certmrt export [-r][-b <ベースファイル名>][--pubout=公開鍵ファイル名][--keyout=秘密鍵ファイル名][--chainout=中間証明書ファイル名] <コモンネーム|証明書ＩＤ>`
+  * `certmrt [-c config_file] export [-a][-b <バックアップ先パス名>]`
+  * `certmrt [-c config_file] export [-r][-b <ベースファイル名>][--pubout=公開鍵ファイル名][--keyout=秘密鍵ファイル名][--chainout=中間証明書ファイル名] <コモンネーム|証明書ＩＤ>`
 
 ## オプション
 * `-o`
@@ -64,7 +64,10 @@ certmgr は設定ファイルを必要とします。
 * （ホームディレクトリの）.certmgrrc
 * /etc/certmgrrc
 
-最低でも「CertRepo」の指定が必須となります。「dbi:SQLite:」以外のデータソースには対応していません。
+また、サブコマンドの前に {{{-c 設定ファイル名}}} を指定することで設定ファイルの読み込みを上書きできます。
+
+設定ファイルでは最低でも「CertRepo」の指定が必須となります。
+今のところ「dbi:SQLite:」以外のデータソースには対応していません。
 
 ### certmgrrc
     CertRepo:	dbi:SQLite:dbname=/var/db/certmgr.sqlite
