@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 use strict;
 use integer;
-use constant DBVER       => 2017110101;
+use constant DBVER       => 2017114101;
 use constant CONFIGFILES => qw(.certmgrrc  $ENV{HOME}/.certmgrrc  /etc/certmgrrc);
 
 use DBI;
@@ -197,16 +197,29 @@ sub init {
 
 	my $dbver = $c->stash->{DBVER};
 	if(  0 < $dbver && $dbver < DBVER  )  {
-		return sprintf("Upgrade your database(current=%d, latest=%d)", $dbver, DBVER);
+		return sprintf("Upgrade your CertRepo(current=%d, latest=%d)", $dbver, DBVER);
 	} # NOT REACHABLE #
 	elsif(  $dbver >= DBVER  )  {
-		return sprintf("Already initialized database(current=%d)", $dbver);
+		return sprintf("CertRepo already initialized (current=%d)", $dbver);
 	} # NOT REACHABLE #
 
-	$dbh->do("CREATE TABLE IF NOT EXISTS config (version INTEGER NOT NULL, is_active BOOLEAN NOT NULL)");
+	# config table #
+	$dbh->do(q{
+		CREATE TABLE IF NOT EXISTS config (
+			version		INTEGER		NOT NULL,
+			is_active	BOOLEAN		NOT NULL
+		);
+	});
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS config_active_idx ON config(is_active) WHERE is_active = 't'");
 	$dbh->do("INSERT INTO config (version, is_active) VALUES (?, 't')", {}, DBVER);
 
+	# plugins table #
+	$dbh->do(q{
+		CREATE TABLE IF NOT EXISTS plugins (plugin_name TEXT NOT NULL, plugin_version INTEGER NOT NULL);
+	});
+	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS plugins_plugin_name_idx ON plugins(plugin_name);");
+
+	# certificate table #
 	$dbh->do(q{
 		CREATE TABLE IF NOT EXISTS certificate (
 			certid		INTEGER		NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -218,6 +231,7 @@ sub init {
 	});
 	$dbh->do("CREATE INDEX IF NOT EXISTS certificate_commonname_idx ON certificate(commonname)");
 
+	# sslcrt table #
 	$dbh->do(q{
 		CREATE TABLE IF NOT EXISTS sslcrt (
 			certid		INTEGER		NOT NULL,
@@ -233,6 +247,7 @@ sub init {
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslcrt_certid_idx  ON sslcrt(certid)");
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslcrt_hashkey_idx ON sslcrt(hashkey)");
 
+	# sslcsr table #
 	$dbh->do(q{
 		CREATE TABLE IF NOT EXISTS sslcsr (
 			certid		INTEGER		NOT NULL,
@@ -245,6 +260,7 @@ sub init {
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslcsr_certid_idx  ON sslcsr(certid)");
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslcsr_hashkey_idx ON sslcsr(hashkey)");
 
+	# sslkey table #
 	$dbh->do(q{
 		CREATE TABLE IF NOT EXISTS sslkey (
 			certid		INTEGER		NOT NULL,
@@ -256,8 +272,13 @@ sub init {
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslkey_certid_idx ON sslkey(certid)");
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslkey_hashkey_idx ON sslkey(hashkey)");
 
-	return undef;
+	return sprintf("CertRepo initialized, done (current=%d)", DBVER);
 } # init
+
+sub get_plugin_version($$) {
+	my($dbh, $name) = @_;
+	return  $dbh->selectrow_array("SELECT version FROM plugins WHERE plugin_name = ?", {}, $name) || 0;
+} # get_plugin_version
 
 sub generate {
 	my $c   = shift;
