@@ -21,19 +21,17 @@ App::Rad->run;
 
 sub setup {
 	my $c = shift;
-	$c->register_commands( {
-		init     => "Init SSL Certificates Repogitory.",
-		list     => "List common names and/or certificates",
-		generate => "Generate a CSR(and KEY)",
-		import   => "Import CSR/KEY/CRT",
-		export   => "Export CSR/KEY/CRT",
-		info     => "Display CSR/KEY/CRT information",
-	});
 
-	my $config;
-	GetOptions ("config|c=s" => \$config);	# XXX: Do error handling #
+	my($config, $prefix);
+	GetOptions(				# XXX: Do error handling #
+		"config|c=s" => \$config,
+		"prefix|plugin|p=s" => \$prefix,
+	);
 
-	my $config;
+	if(not  $prefix eq ""  )  {
+		die "Not support plugin: prefix=$prefix\n";
+	}
+
 	if(  $config eq ""  )  {
 		foreach  (  CONFIGFILES  )  {
 			next  unless(  -r  );
@@ -42,6 +40,15 @@ sub setup {
 		}
 	}
 	$c->stash->{Config} = $config;
+
+	$c->register_commands( {
+		"${prefix}init"     => "Init SSL Certificates Repogitory.",
+		"${prefix}list"     => "List common names and/or certificates",
+		"${prefix}generate" => "Generate a CSR(and KEY)",
+		"${prefix}import"   => "Import CSR/KEY/CRT",
+		"${prefix}export"   => "Export CSR/KEY/CRT",
+		"${prefix}info"     => "Display CSR/KEY/CRT information",
+	});
 } # setup #
 
 sub pre_process {
@@ -78,6 +85,12 @@ sub pre_process {
 		$c->stash->{DBUSER} = $dbuser;
 		$c->stash->{DBPASS} = $dbpass;
 		$c->stash->{DBVER}  = $dbver;
+
+		foreach (  $dbh->selectall_arrayref("SELECT plugin_name, plugin_version FROM plugins", {Slice =>{}})  )  {
+			my $name    = $_->{plugin_name};
+			my $version = $_->{plugin_version};
+			$c->stach->{"PLUGIN_${name}"} = $version;
+		}
 	}
 } # pre_process #
 
@@ -215,7 +228,10 @@ sub init {
 
 	# plugins table #
 	$dbh->do(q{
-		CREATE TABLE IF NOT EXISTS plugins (plugin_name TEXT NOT NULL, plugin_version INTEGER NOT NULL);
+		CREATE TABLE IF NOT EXISTS plugins (
+			plugin_name	TEXT		NOT NULL,
+			plugin_version	INTEGER		NOT NULL
+		);
 	});
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS plugins_plugin_name_idx ON plugins(plugin_name);");
 
