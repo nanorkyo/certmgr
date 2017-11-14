@@ -86,10 +86,10 @@ sub pre_process {
 		$c->stash->{DBPASS} = $dbpass;
 		$c->stash->{DBVER}  = $dbver;
 
-		foreach (  $dbh->selectall_arrayref("SELECT plugin_name, plugin_version FROM plugins", {Slice =>{}})  )  {
+		foreach (  @{ $dbh->selectall_arrayref("SELECT plugin_name, plugin_version FROM plugins", {Slice =>{}}) }  )  {
 			my $name    = $_->{plugin_name};
 			my $version = $_->{plugin_version};
-			$c->stach->{"PLUGIN_${name}"} = $version;
+			$c->stash->{"PLUGIN_${name}"} = $version;
 		}
 	}
 } # pre_process #
