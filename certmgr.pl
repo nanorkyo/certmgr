@@ -17,6 +17,9 @@ use POSIX "strftime";
 use Digest::SHA "sha256_base64";
 use Getopt::Long qw(:config posix_default no_ignore_case gnu_compat);
 
+our %PLUGINS = (
+);
+
 App::Rad->run;
 
 sub setup {
@@ -28,7 +31,9 @@ sub setup {
 		"prefix|plugin|p=s" => \$prefix,
 	);
 
-	if(not  $prefix eq ""  )  {
+	if(  exists($PLUGINS{$prefix})  )  {
+		$prefix .= "_";
+	}  elsif(  $prefix ne ""  )  {
 		die "Not support plugin: prefix=$prefix\n";
 	}
 
