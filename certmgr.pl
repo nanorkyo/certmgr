@@ -17,25 +17,15 @@ use POSIX "strftime";
 use Digest::SHA "sha256_base64";
 use Getopt::Long qw(:config posix_default no_ignore_case gnu_compat);
 
-our %PLUGINS = (
-);
-
 App::Rad->run;
 
 sub setup {
 	my $c = shift;
 
-	my($config, $prefix);
+	my $config;
 	GetOptions(				# XXX: Do error handling #
 		"config|c=s" => \$config,
-		"prefix|plugin|p=s" => \$prefix,
 	);
-
-	if(  exists($PLUGINS{$prefix})  )  {
-		$prefix .= "_";
-	}  elsif(  $prefix ne ""  )  {
-		die "Not support plugin: prefix=$prefix\n";
-	}
 
 	if(  $config eq ""  )  {
 		foreach  (  CONFIGFILES  )  {
@@ -47,12 +37,12 @@ sub setup {
 	$c->stash->{Config} = $config;
 
 	$c->register_commands( {
-		"${prefix}init"     => "Init SSL Certificates Repogitory.",
-		"${prefix}list"     => "List common names and/or certificates",
-		"${prefix}generate" => "Generate a CSR(and KEY)",
-		"${prefix}import"   => "Import CSR/KEY/CRT",
-		"${prefix}export"   => "Export CSR/KEY/CRT",
-		"${prefix}info"     => "Display CSR/KEY/CRT information",
+		"init"     => "Init SSL Certificates Repogitory.",
+		"list"     => "List common names and/or certificates",
+		"generate" => "Generate a CSR(and KEY)",
+		"import"   => "Import CSR/KEY/CRT",
+		"export"   => "Export CSR/KEY/CRT",
+		"info"     => "Display CSR/KEY/CRT information",
 	});
 } # setup #
 
