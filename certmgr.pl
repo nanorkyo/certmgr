@@ -8,6 +8,7 @@ use DBI;
 use App::Rad;	#qw(debug);
 use IO::File;
 use IO::Handle;
+use IO::String;
 use IPC::Open2;
 use File::Temp;
 use Data::Dumper;
@@ -41,6 +42,7 @@ sub setup {
 		"list"     => "List common names and/or certificates",
 		"info"     => "Display CSR/KEY/CRT information",
 		"generate" => "Generate a CSR(and KEY)",
+		"sign"     => "Signing a CSR by dehydrated (expremental)",
 		"import"   => "Import CSR/KEY/CRT",
 		"export"   => "Export CSR/KEY/CRT",
 	});
@@ -390,7 +392,7 @@ sub generate {
 
 	$dbh->disconnect;
 
-	return sprintf("%s successfully: certid=%d, subject=%s", $c->cmd, $certid, $subj);
+	return sprintf("%s successfully: subject=%s", $c->cmd, $subj);
 } # generate #
 
 sub max($$) { return $_[0] > $_[1] ? $_[0] : $_[1]; }
@@ -555,6 +557,45 @@ sub import_crt($$$) {
 	return;
 } # import_crt
 
+sub import_multiple($$$$) {
+	my($c, $dbh, $fh, $mark) = @_;
+
+	my($csr, $key, $crt, $header) = ("", "", "", "");
+	while(  <$fh>  )  {
+		if(  m|^-----\s*BEGIN\s+(CERTIFICATE\s+REQUEST)\s*-----$|  )  {
+			$csr    = $_;
+			$header = $1;
+			next;
+		}  # NOT REACHABLE #
+		elsif(  m|^-----\s*BEGIN\s+(PRIVATE\s+KEY)\s*-----$|  )  {
+			$key    = $_;
+			$header = $1;
+			next;
+		}  # NOT REACHABLE #
+		elsif(  m|^-----\s*BEGIN\s+(CERTIFICATE)\s*-----$| )  {
+			$crt    = $_;
+			$header = $1;
+			next;
+		} # NOT REACHABLE #
+
+		$csr .= $_  if(  $csr ne ""  );
+		$key .= $_  if(  $key ne ""  );
+		$crt .= $_  if(  $crt ne ""  );
+
+		if(  m|^-----END\s+\Q${header}\E\s*-----$|  )  {
+			import_csr($c, $dbh, $csr, $mark)  if(  $csr ne ""  );
+			import_key($c, $dbh, $key       )  if(  $key ne ""  );
+			import_crt($c, $dbh, $crt       )  if(  $crt ne ""  );
+			$csr    = "";
+			$key    = "";
+			$crt    = "";
+			$header = "";
+		}
+	}
+
+	return;
+} # import_multiple
+
 sub import {
 	my $c    = shift;
 	my $dbh  = $c->stash->{DBH};
@@ -577,40 +618,7 @@ sub import {
 		} # NOT REACHABLE #
 
 		my $fh = new IO::File($file, "r")   or  die sprintf("cannot read file(%s): %s", $file, $!);
-
-		my($csr, $key, $crt, $header) = ("", "", "", "");
-		while(  <$fh>  )  {
-			if(  m|^-----\s*BEGIN\s+(CERTIFICATE\s+REQUEST)\s*-----$|  )  {
-				$csr    = $_;
-				$header = $1;
-				next;
-			}  # NOT REACHABLE #
-			elsif(  m|^-----\s*BEGIN\s+(PRIVATE\s+KEY)\s*-----$|  )  {
-				$key    = $_;
-				$header = $1;
-				next;
-			}  # NOT REACHABLE #
-			elsif(  m|^-----\s*BEGIN\s+(CERTIFICATE)\s*-----$| )  {
-				$crt    = $_;
-				$header = $1;
-				next;
-			} # NOT REACHABLE #
-
-			$csr .= $_  if(  $csr ne ""  );
-			$key .= $_  if(  $key ne ""  );
-			$crt .= $_  if(  $crt ne ""  );
-
-			if(  m|^-----END\s+\Q${header}\E\s*-----$|  )  {
-				import_csr($c, $dbh, $csr, $mark)  if(  $csr ne ""  );
-				import_key($c, $dbh, $key       )  if(  $key ne ""  );
-				import_crt($c, $dbh, $crt       )  if(  $crt ne ""  );
-				$csr    = "";
-				$key    = "";
-				$crt    = "";
-				$header = "";
-			}
-		}
-
+		import_multiple($c, $dbh, $fh, $mark);
 		close($fh);
 	}
 
@@ -878,3 +886,48 @@ sub info {
 
 	return undef;
 } # info
+
+sub sign {
+	my $c	 = shift;
+	my $dbh	 = $c->stash->{DBH};
+
+	init($c)	 if(  $c->stash->{DBVER} == 0  );
+
+	foreach  my $argv  ( @{$c->argv} ) {
+		my $csr;
+		if(  $argv =~ /^\d+$/  )  {
+			$csr = $dbh->selectrow_array(q{
+				SELECT csrtext
+				  FROM certificate
+				  LEFT JOIN sslcrt USING(certid)
+				  LEFT JOIN sslcsr USING(certid)
+				 WHERE certid = ? AND sslcrt.certid IS NULL AND sslcsr.certid IS NOT NULL
+			}, {}, $argv);
+		}  else	 {
+			$csr = $dbh->selectrow_array(q{
+				SELECT csrtext
+				  FROM certificate
+				  LEFT JOIN sslcrt USING(certid)
+				  LEFT JOIN sslcsr USING(certid)
+				 WHERE commonname = ? AND sslcrt.certid IS NULL AND sslcsr.certid IS NOT NULL AND is_marked = 't'
+			}, {}, $argv);
+		}
+
+		if(  !defined $csr  )  {
+			printf("%s ignored: argv=%s, error=no certificate found", $c->cmd, $argv || "(null)");
+			return undef;
+		} # NOT REACHABLE #
+
+		my $fh = new File::Temp(UNLINK => 0);
+		   $fh->unlink_on_destroy(1);
+		   $fh->printflush($csr);
+
+		my $text = filtcmd($csr, qw{dehydrated --full-chain --signcsr}, $fh->filename);
+
+		my $io = new IO::String($text);
+		import_multiple($c, $dbh, $io, undef);
+		   $io->close();
+	}
+
+	return undef;
+} # sign
