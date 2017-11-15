@@ -838,7 +838,7 @@ sub info_repo($$$) {
 	my $where = ($argv =~ /^\d+$/) ? "certid" : "commonname";
 
 	my($certid, $cn, $active, $marked, $subject, $issuer, $startdate, $enddate, $incrt , $incsr, $inkey, $hash) = $dbh->selectrow_array(sprintf(q{
-		SELECT certid, commonname, is_active, is_marked, sslcrt.subject, issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL, COALESCE(sslcrt.hashkey, sslcsr.hashkey, sslkey.hashkey)
+		SELECT certid, commonname, is_active, is_marked, COALESCE(sslcrt.subject, sslcsr.subject), issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL, COALESCE(sslcrt.hashkey, sslcsr.hashkey, sslkey.hashkey)
 		  FROM certificate
 		  LEFT JOIN sslcrt USING(certid)
 		  LEFT JOIN sslcsr USING(certid)
