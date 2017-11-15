@@ -18,6 +18,7 @@ use POSIX "strftime";
 use Digest::SHA "sha256_base64";
 use Getopt::Long qw(:config posix_default no_ignore_case gnu_compat);
 
+select((select(STDOUT), $|=1)[0]);
 App::Rad->run;
 
 sub setup {
