@@ -39,10 +39,10 @@ sub setup {
 	$c->register_commands( {
 		"init"     => "Init SSL Certificates Repogitory.",
 		"list"     => "List common names and/or certificates",
+		"info"     => "Display CSR/KEY/CRT information",
 		"generate" => "Generate a CSR(and KEY)",
 		"import"   => "Import CSR/KEY/CRT",
 		"export"   => "Export CSR/KEY/CRT",
-		"info"     => "Display CSR/KEY/CRT information",
 	});
 } # setup #
 
