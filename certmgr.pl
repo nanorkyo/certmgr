@@ -383,20 +383,12 @@ sub generate {
 	close($csrfile);
 	close($keyfile);
 
-	my $csrhash = openssl_req_pubkey($csr);
-	my $keyhash = openssl_pkey_pubkey($key);
-
-	my $certid;
-	$dbh->begin_work;
-	$dbh->do(q{INSERT INTO certificate (commonname, is_active, is_marked) VALUES (?, 'f', ?)}, {}, $cn, $mark);
-	$certid = $dbh->selectrow_array("SELECT last_insert_rowid() FROM certificate");
-	$dbh->do(q{UPDATE certificate SET is_marked = 'f' WHERE commonname = ? AND certid <> ? AND is_marked = 't'}, {}, $cn, $certid)  if(  $mark eq "t"  );
-	$dbh->do(q{INSERT INTO sslcsr (certid, subject, csrtext, hashkey) VALUES (?, ?, ?, ?)}, {}, $certid, $subj, $csr, $csrhash);
-	$dbh->do(q{INSERT INTO sslkey (certid, keytext, hashkey) VALUES (?, ?, ?)}, {}, $certid, $key, $keyhash);
-	$dbh->commit;
-	$dbh->disconnect;
-
 	print $csr;
+
+	print import_csr($c, $dbh, $csr, $mark);
+	print import_key($c, $dbh, $key);
+
+	$dbh->disconnect;
 
 	return sprintf("%s successfully: certid=%d, subject=%s", $c->cmd, $certid, $subj);
 } # generate #
@@ -474,9 +466,11 @@ sub import_csr($$$$) {
 		 UNION
 		SELECT certid FROM sslkey WHERE hashkey = ?
 	}, {}, $csrhash, $csrhash);
+
 	if(  !defined $certid  )  {
 		$dbh->do("INSERT INTO certificate (commonname, is_active, is_marked) VALUES (?, 'f', ?)", {}, $cn, $mark);
 		$certid = $dbh->selectrow_array("SELECT last_insert_rowid() FROM certificate");
+		$dbh->do("UPDATE certificate SET is_marked = 'f' WHERE commonname = ? AND certid <> ? AND is_marked = 't'", {}, $cn, $certid)  if(  $mark eq "t"  );
 	}  else  {
 		if(  $mark eq "t"  )  {
 			$dbh->do("UPDATE certificate SET is_marked = 't' WHERE certid = ?",                                         {},      $certid);
@@ -508,6 +502,7 @@ sub import_key($$$) {
 		 UNION
 		SELECT certid FROM sslcsr WHERE hashkey = ?
 	}, {}, $keyhash, $keyhash);
+
 	if(  !defined $certid  )  {
 		$dbh->commit;
 		printf("%s ignored: cert=KEY, error=couldn't be imported by no CSR/CRT found: hash=%s\n", $c->cmd, $keyhash);
