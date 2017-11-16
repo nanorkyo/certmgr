@@ -40,12 +40,15 @@ sub setup {
 
 	$c->register_commands( {
 		"init"     => "Init SSL Certificates Repogitory.",
+		"hpeilo_init"     => "Init HPEILO plugin.",
 		"list"     => "List common names and/or certificates",
 		"info"     => "Display CSR/KEY/CRT information",
 		"generate" => "Generate a CSR(and KEY)",
+		"hpeilo_generate" => "Generate a CSR from iLO4/5",
 		"sign"     => "Signing a CSR by dehydrated (expremental)",
 		"import"   => "Import CSR/KEY/CRT",
 		"export"   => "Export CSR/KEY/CRT",
+		"hpeilo_deploy"   => "Deploy a CRT to iLO4/5",
 	});
 } # setup #
 
@@ -932,3 +935,215 @@ sub sign {
 
 	return undef;
 } # sign
+
+
+use feature "switch";
+use experimental "smartmatch";
+use constant PLUGIN_HPEILO => 2017111401;
+
+use JSON::PP;
+use LWP::UserAgent;
+
+sub hpeilo_init {
+	my $c	   = shift;
+	my $dbh    = $c->stash->{DBH};
+
+	my $version = get_plubin_version($dbh, "HPEILO");
+	if(  0 < $version && $version < PLUGIN_HPEILO  )  {
+		return sprintf("Upgrade your database(current=%d, latest=%d)", $version, PLUGIN_HPEILO);
+	} # NOT REACHABLE #
+	elsif(	$version >= PLUGIN_HPEILO	)  {
+		return sprintf("Already initialized database(current=%d)", $version);
+	} # NOT REACHABLE #
+
+	$dbh->do(q{
+		CREATE TABLE IF NOT EXISTS plugin_hpeilo (
+			commonname	TEXT		NOT NULL,
+			authid		TEXT		NOT NULL,
+			authpass	TEXT		NOT NULL,
+		);
+	});
+	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS plugin_hpeilo_commonname_idx ON plugin_hpeilo(LOWER(commonname))");
+	$dbh->do("INSERT INTO plugins (plugin_name, plugin_version) VALUES ('HPEILO', ?);", {}, PLUGIN_HPEILO);
+
+	return sprintf("CertRepo updated, done (current=%d)", PLUGIN_HPEILO);
+} # hpeilo_init
+
+sub hpeilo_generate {
+	my $c   = shift;
+	my $dbh = $c->stash->{DBH};
+
+	init($c)         if(  $c->stash->{DBVER} == 0  );
+	hpeilo_init($c)  if(  $c->stash->{PLUGIN_HPEILO} == 0  );
+
+	$c->getopt("mark|m", "unmark|u", "type|t=s", "sign|s=s", "sans|san=s", "ocsp-must-staple");	# XXX: Do error handle #
+
+	my $cn;
+	my $subj     = shift(@{$c->argv})  || "";
+
+	my $dmark = undef;
+	$dmark = 1  if(  $c->config->{DefaultMarked} =~ m/(?:[Yy][Ee][Ss])|(?:[Tt][Rr][Uu][Ee])|(?:[Oo][Nn])|(?:1)/  );
+	$dmark = 0  if(  $c->config->{DefaultMarked} =~ m/(?:[Nn][Oo])|(?:[Ff][Aa][Uu][Ll][Tt])|(?:[Oo][Ff][Ff])|(?:0)/  );
+	$dmark = 1  if(  !defined $dmark  );
+
+	my $mark  = $dmark ? ($c->options->{unmark} ? "f" : "t") : ($c->options->{mark} ? "t" : "f");
+
+	($cn, $subj) = get_cn_from_subject($subj);
+	if(  defined $cn  && !defined $subj  )	{
+		$subj = get_subject_from_cn($dbh, $cn);
+	}
+	if(  !defined $cn  )  {
+		return sprintf("%s [-m] [/subject]: CN(CommonName) required in subject", $c->cmd);
+	} # NOT REACHABLE #
+	elsif(	!defined $subj	)  {
+		return sprintf("%s [-m] [/subject]: subject required", $c->cmd);
+	} # NOT REACHABLE #
+
+	printf "cn:               %s\n", $cn;
+	printf "subject:          %s\n", $subj;
+	printf "sans:             N/A\n";
+	printf "type:             N/A\n";
+	printf "sign:             N/A\n";
+	printf "markable:         %s\n", ($mark ? "Yes" : "No");
+	printf "OCSP Must Staple: N/A (soft fail)\n";
+
+	my %generate_csr = (
+		"Action"     => "GenerateCSR",
+	);
+
+	foreach (  split m|/|, $subj  )  {
+		my($attrib, $value) = split /=/, $_, 2;
+		for($attrib) {
+			when ("C")  { $generate_csr{"Country"   } = $value; }
+			when ("ST") { $generate_csr{"State"     } = $value; }
+			when ("L")  { $generate_csr{"City"      } = $value; }
+			when ("O")  { $generate_csr{"OrgName"   } = $value; }
+			when ("OU") { $generate_csr{"OrgUnit"   } = $value; }
+			when ("CN") { $generate_csr{"CommonName"} = $value; }
+		}
+	}
+
+	my $json = JSON::PP->new->ascii;
+	## FOR DEBUG USE ##
+	#my $json = JSON::PP->new->ascii->canonical->sort_by(sub {
+	#	{Action => 1, Country => 2, State =>3, City => 4, OrgName => 5, OrgUnit => 6, CommonName => 7}->{$JSON::PP::a}
+	#							<=>
+	#	{Action => 1, Country => 2, State =>3, City => 4, OrgName => 5, OrgUnit => 6, CommonName => 7}->{$JSON::PP::b};
+	#});
+	## FOR DEBUG USE ##
+
+	my($id, $pass) = $dbh->selectrow_array( "SELECT authid, authpass FROM plugin_hpeilo WHERE LOWER(commonname) = ?", {}, lc($cn) );
+
+	# Generate CSR
+	print "iLO Generate CSR requesting...";
+	my $ua = new LWP::UserAgent(keep_alive => 0);
+	   $ua->ssl_opts(verify_hostname => 0);
+
+	my $gen = new HTTP::Request(POST => sprintf("https://%s/rest/v1/Managers/1/SecurityService/HttpsCert", $cn));
+	   $gen->content_type("application/json");
+	   $gen->authorization_basic($id, $pass);
+	   $gen->header(Accept => "application/json");
+	   $gen->content($json->encode(\%generate_csr));
+
+	   $ua->request($gen);
+
+	print "done\n";
+
+	undef $ua;	# Force close connection #
+
+	# Get generated CSR
+	print "iLO Generating CSR waiting";
+	   $ua = new LWP::UserAgent(keep_alive => undef);
+	   $ua->ssl_opts(verify_hostname => 0);
+
+	my $get = new HTTP::Request(GET => sprintf("https://%s/rest/v1/Managers/1/SecurityService/HttpsCert", $cn));
+	   $get->content_type("application/json");
+	   $get->authorization_basic($id, $pass);
+	   $get->header(Accept => "application/json");
+
+	my $csr = undef;
+	for(  my $retry = 30;  $retry;  $retry--  )  {
+		print "...";
+		my $res = $ua->request($get);
+
+		if(  $res->is_success  )  {
+			my $generated_csr = $json->decode($res->content);
+			if(  $generated_csr->{CertificateSigningRequest} =~ /BEGIN CERTIFICATE REQUEST/  )  {
+				$csr = $generated_csr->{CertificateSigningRequest};
+				last;
+			} # NOT REACHABLE #
+			else  {
+				print "yet...";
+			}
+		}
+else {
+print $res->status_line, "\n";
+}
+		sleep 5;
+	}
+	print "done\n";
+
+	undef $ua;	# Force close connection #
+
+	return import_csr($c, $dbh, $csr, $mark);
+} # hpeilo_generate
+
+sub hpeilo_deploy {
+	my $c    = shift;
+	my $dbh  = $c->stash->{DBH};
+	my $argv = shift @{$c->argv};
+
+	init($c)         if(  $c->stash->{DBVER} == 0  );
+        hpeilo_init($c)  if(  $c->stash->{PLUGIN_HPEILO} == 0  );
+
+	my $crt;
+	if(  $argv =~ /^\d+$/  )  {
+		$crt = $dbh->selectrow_array(q{
+			SELECT crttext
+			  FROM certificate
+			 INNER JOIN sslcrt USING(certid)
+			 WHERE certid = ?
+		}, {}, $argv);
+	}  else	 {
+		$crt = $dbh->selectrow_array(q{
+			SELECT crttext
+			  FROM certificate
+			 INNER JOIN sslcrt USING(certid)
+			 WHERE commonname = ? AND is_active = 't' AND is_marked = 't'
+		}, {}, $argv);
+	}
+
+	if(  !defined $crt  )  {
+		return sprintf("%s ignored: argv=%s, error=no certificate found", $c->cmd, $argv || "(null)");
+	} # NOT REACHABLE #
+
+	my $cn   = get_cn_from_subject(openssl_x509_subject($crt));
+	my $json = JSON::PP->new->ascii;
+	my($id, $pass) = $dbh->selectrow_array( "SELECT authid, authpass FROM plugin_hpeilo WHERE LOWER(commonname) = ?", {}, lc($cn) );
+
+	# Deploy CSR
+	my $ua = new LWP::UserAgent(keep_alive => 0);
+	   $ua->ssl_opts(verify_hostname => 0);
+
+	my $req = new HTTP::Request(POST => sprintf("https://%s/rest/v1/Managers/1/SecurityService/HttpsCert", $cn));
+	   $req->content_type("application/json");
+	   $req->authorization_basic($id, $pass);
+	   $req->header(Accept => "application/json");
+	   $req->content($json->encode({ Action => "ImportCertificate", Certificate => $crt }));
+
+	my $res = $ua->request($req);
+
+	if(  $res->is_success  )  {
+		my $mesg = $json->decode($res->content);
+		if(  $mesg->{Messages}->[0]->{MessageID} eq "iLO.0.10.ImportCertSuccessfuliLOResetinProgress"  )  {
+			printf("%s successfull: imported and reset iLO\n", $c->cmd);
+			return undef;
+		} # NOT REACHABLE #
+		else {
+			printf("%s unsuccessfull: message code = %s\n", $c->cmd, $res->content);
+			return undef;
+		} # NOT REACHABLE #
+	}  else  {
+		return sprintf("%s unsuccessfull: http status = %s", $c->cmd, $res->status_line);
+	}
+} # hpeilo_deploy
