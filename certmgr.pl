@@ -75,6 +75,11 @@ sub pre_process {
 		my $dbver;
 		if(  $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sqlite_master WHERE type = 'table' AND name = 'config')")  )  {
 			$dbver = $dbh->selectrow_array("SELECT version FROM config WHERE is_active = 't'");
+			foreach (  @{ $dbh->selectall_arrayref("SELECT plugin_name, plugin_version FROM plugins", {Slice =>{}}) }  )  {
+				my $name    = $_->{plugin_name};
+				my $version = $_->{plugin_version};
+				$c->stash->{"PLUGIN_${name}"} = $version;
+			}
 		}  else  {
 			$dbver = 0;
 		}
@@ -83,12 +88,6 @@ sub pre_process {
 		$c->stash->{DBUSER} = $dbuser;
 		$c->stash->{DBPASS} = $dbpass;
 		$c->stash->{DBVER}  = $dbver;
-
-		foreach (  @{ $dbh->selectall_arrayref("SELECT plugin_name, plugin_version FROM plugins", {Slice =>{}}) }  )  {
-			my $name    = $_->{plugin_name};
-			my $version = $_->{plugin_version};
-			$c->stash->{"PLUGIN_${name}"} = $version;
-		}
 	}
 } # pre_process #
 
