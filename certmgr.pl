@@ -43,6 +43,7 @@ sub setup {
 		"hpeilo_init"     => "Init HPEILO plugin.",
 		"list"     => "List common names and/or certificates",
 		"info"     => "Display CSR/KEY/CRT information",
+		"hpeilo_credential" => "Set id/password for iLO4/5",
 		"generate" => "Generate a CSR(and KEY)",
 		"hpeilo_generate" => "Generate a CSR from iLO4/5",
 		"sign"     => "Signing a CSR by dehydrated (expremental)",
@@ -942,6 +943,7 @@ use constant PLUGIN_HPEILO => 2017111401;
 
 use JSON::PP;
 use LWP::UserAgent;
+use Term::ReadPassword;
 
 sub hpeilo_init {
 	my $c	   = shift;
@@ -1146,3 +1148,29 @@ sub hpeilo_deploy {
 		return sprintf("%s unsuccessfull: http status = %s", $c->cmd, $res->status_line);
 	}
 } # hpeilo_deploy
+
+sub hpeilo_credential {
+	my $c	 = shift;
+	my $dbh	 = $c->stash->{DBH};
+
+	hpeilo_init($c)	 if(  $c->stash->{PLUGIN_HPEILO} == 0  );
+
+	$c->getopt("id|i", "password|pass|p");	# XXX: Do error handle #
+
+	foreach	 my $argv  ( @{$c->argv} ) {
+		my $id	 = defined $c->options->{id}	   ? $c->options->{id}	     : "Administrator";
+		my $pass = defined $c->options->{password} ? $c->options->{password} : undef;
+		if(  !defined $pass  )	{
+			$pass = read_password(sprintf "[%s] password for %s: ", $argv, $id);
+		}
+
+		if(  $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM plugin_hpeilo WHERE LOWER(commonname) = ? AND authid = ?)", {}, lc $argv, $id)  )  {
+			$dbh->do("UPDATE plugin_hpeilo SET authpass = ? WHERE LOWER(commonname) = ? AND authid = ?", {}, $pass, lc $argv, $id);
+		} else {
+			$dbh->do("INSERT INTO plugin_hpeilo (commonname, authid, authpass) VALUES(?, ?, ?);", {}, lc $argv, $id, $pass);
+		}
+	}
+	$dbh->disconnect;
+
+	return undef;
+} # hpeilo_credential
