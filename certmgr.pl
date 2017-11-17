@@ -949,7 +949,9 @@ sub hpeilo_init {
 	my $c	   = shift;
 	my $dbh    = $c->stash->{DBH};
 
-	my $version = get_plubin_version($dbh, "HPEILO");
+	init($c)         if(  $c->stash->{DBVER} == 0  );
+
+	my $version = get_plugin_version($dbh, "HPEILO");
 	if(  0 < $version && $version < PLUGIN_HPEILO  )  {
 		return sprintf("Upgrade your database(current=%d, latest=%d)", $version, PLUGIN_HPEILO);
 	} # NOT REACHABLE #
@@ -961,7 +963,7 @@ sub hpeilo_init {
 		CREATE TABLE IF NOT EXISTS plugin_hpeilo (
 			commonname	TEXT		NOT NULL,
 			authid		TEXT		NOT NULL,
-			authpass	TEXT		NOT NULL,
+			authpass	TEXT		NOT NULL
 		);
 	});
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS plugin_hpeilo_commonname_idx ON plugin_hpeilo(LOWER(commonname))");
@@ -974,7 +976,6 @@ sub hpeilo_generate {
 	my $c   = shift;
 	my $dbh = $c->stash->{DBH};
 
-	init($c)         if(  $c->stash->{DBVER} == 0  );
 	hpeilo_init($c)  if(  $c->stash->{PLUGIN_HPEILO} == 0  );
 
 	$c->getopt("mark|m", "unmark|u", "type|t=s", "sign|s=s", "sans|san=s", "ocsp-must-staple");	# XXX: Do error handle #
@@ -1094,8 +1095,7 @@ sub hpeilo_deploy {
 	my $dbh  = $c->stash->{DBH};
 	my $argv = shift @{$c->argv};
 
-	init($c)         if(  $c->stash->{DBVER} == 0  );
-        hpeilo_init($c)  if(  $c->stash->{PLUGIN_HPEILO} == 0  );
+	hpeilo_init($c)  if(  $c->stash->{PLUGIN_HPEILO} == 0  );
 
 	my $crt;
 	if(  $argv =~ /^\d+$/  )  {
