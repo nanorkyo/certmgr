@@ -290,7 +290,7 @@ sub init {
 
 sub get_plugin_version($$) {
 	my($dbh, $name) = @_;
-	return  $dbh->selectrow_array("SELECT version FROM plugins WHERE plugin_name = ?", {}, $name) || 0;
+	return  $dbh->selectrow_array("SELECT plugin_version FROM plugins WHERE plugin_name = ?", {}, $name) || 0;
 } # get_plugin_version
 
 sub generate {
