@@ -835,13 +835,13 @@ sub info_file($$$) {
 	printf "\n";
 } # info_file
 
-sub info_repo($$$) {
-	my($c, $dbh, $argv) = @_;
+sub info_repo($$$$) {
+	my($c, $dbh, $csr_required, $argv) = @_;
 
 	my $where = ($argv =~ /^\d+$/) ? "certid" : "commonname";
 
 	my($certid, $cn, $active, $marked, $subject, $issuer, $startdate, $enddate, $incrt , $incsr, $inkey, $hash) = $dbh->selectrow_array(sprintf(q{
-		SELECT certid, commonname, is_active, is_marked, COALESCE(sslcrt.subject, sslcsr.subject), issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL, COALESCE(sslcrt.hashkey, sslcsr.hashkey, sslkey.hashkey)
+		SELECT certid, commonname, is_active, is_marked, CASE WHEN ? = 't' THEN COALESCE(sslcsr.subject, sslcrt.subject) ELSE COALESCE(sslcrt.subject, sslcsr.subject) END, issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL, COALESCE(sslcrt.hashkey, sslcsr.hashkey, sslkey.hashkey)
 		  FROM certificate
 		  LEFT JOIN sslcrt USING(certid)
 		  LEFT JOIN sslcsr USING(certid)
@@ -851,7 +851,7 @@ sub info_repo($$$) {
 		          CASE WHEN is_marked = 't' THEN 0 ELSE 1 END ASC,
 			  certid DESC
 		 LIMIT 1
-	}, $where), {}, $argv);
+	}, $where), {}, $csr_required, $argv);
 
 	if(  !defined $cn  )  {
 		printf "No certificate found: %s=%s", $where, $argv;
@@ -876,11 +876,13 @@ sub info {
 
 	init($c)  if(  $c->stash->{DBVER} == 0  );
 
+	$c->getopt("csr");
+
 	foreach  my $argv  ( @{$c->argv} )  {
 		if(  -r $argv  )  {
 			info_file($c, $dbh, $argv);
 		}  else  {
-			info_repo($c, $dbh, $argv);
+			info_repo($c, $dbh, ($c->options->{csr} ? 't' : 'f'), $argv);
 		}
 	}
 
