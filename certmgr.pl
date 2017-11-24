@@ -40,12 +40,16 @@ sub setup {
 
 	$c->register_commands( {
 		"init"     => "Init SSL Certificates Repogitory.",
+		"infoblox_init"       => "Init INFOBLOX plugin.",
 		"list"     => "List common names and/or certificates",
+		"infoblox_credential" => "Set id/password of master for Infoblox",
 		"info"     => "Display CSR/KEY/CRT information",
 		"generate" => "Generate a CSR(and KEY)",
+		"infoblox_generate"   => "Generate a CSR from Infoblox",
 		"sign"     => "Signing a CSR by dehydrated (expremental)",
 		"import"   => "Import CSR/KEY/CRT",
 		"export"   => "Export CSR/KEY/CRT",
+		"infoblox_deploy"     => "Deploy a CRT to Infoblox",
 	});
 } # setup #
 
@@ -931,3 +935,284 @@ sub sign {
 
 	return undef;
 } # sign
+
+
+use feature "switch";
+use experimental "smartmatch";
+use constant PLUGIN_INFOBLOX => 2017112201;
+
+use Infoblox;
+use Term::ReadPassword;
+
+sub infoblox_init {
+	my $c	   = shift;
+	my $dbh	   = $c->stash->{DBH};
+
+	init($c)  if(  $c->stash->{DBVER} == 0  );
+
+	my $version = get_plugin_version($dbh, "INFOBLOX");
+	if(  0 < $version && $version < PLUGIN_INFOBLOX  )  {
+		return sprintf("Upgrade your database(current=%d, latest=%d)", $version, PLUGIN_INFOBLOX);
+	} # NOT REACHABLE #
+	elsif(	$version >= PLUGIN_INFOBLOX	)  {
+		return sprintf("Already initialized database(current=%d)", $version);
+	} # NOT REACHABLE #
+
+	$dbh->do(q{
+		CREATE TABLE IF NOT EXISTS plugin_infoblox (
+			masterid	INTEGER		NOT NULL PRIMARY KEY AUTOINCREMENT,
+			master		TEXT		NOT NULL,
+			authid		TEXT		NOT NULL,
+			authpass	TEXT		NOT NULL
+		);
+	});
+	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS plugin_infoblox_master_authid_idx ON plugin_infoblox(master, authid)");
+
+	$dbh->do(q{
+		CREATE TABLE IF NOT EXISTS plugin_infoblox_member (
+			member		TEXT		NOT NULL UNIQUE,
+			masterid	INTEGER		NOT NULL,
+				FOREIGN KEY(masterid) REFERENCES plugin_infoblox(masterid)
+		);
+	});
+
+	$dbh->do("INSERT INTO plugins (plugin_name, plugin_version) VALUES ('INFOBLOX', ?);", {}, PLUGIN_INFOBLOX);
+
+	return sprintf("CertRepo updated, done (current=%d)", PLUGIN_INFOBLOX);
+} # infoblox_init
+
+sub infoblox_generate {
+	my $c	= shift;
+	my $dbh = $c->stash->{DBH};
+
+	infoblox_init($c)  if(  $c->stash->{PLUGIN_INFOBLOX} == 0  );
+
+	$c->getopt("mark|m", "unmark|u", "type|t=s", "sign|s=s", "sans|san=s", "ocsp-must-staple");	# XXX: Do error handle #
+
+	my $cn;
+	my $subj     = shift(@{$c->argv})  || "";
+	my $type     = $c->options->{type} || "";
+	my $sign     = $c->options->{sign} || "";
+
+	my $dmark = undef;
+	$dmark = 1  if(	 $c->config->{DefaultMarked} =~ m/(?:[Yy][Ee][Ss])|(?:[Tt][Rr][Uu][Ee])|(?:[Oo][Nn])|(?:1)/  );
+	$dmark = 0  if(	 $c->config->{DefaultMarked} =~ m/(?:[Nn][Oo])|(?:[Ff][Aa][Uu][Ll][Tt])|(?:[Oo][Ff][Ff])|(?:0)/	 );
+	$dmark = 1  if(	 !defined $dmark  );
+
+	my $mark  = $dmark ? ($c->options->{unmark} ? "f" : "t") : ($c->options->{mark} ? "t" : "f");
+
+	($cn, $subj) = get_cn_from_subject($subj);
+	if(  defined $cn  && !defined $subj  )	{
+		$subj = get_subject_from_cn($dbh, $cn);
+	}
+	if(  !defined $cn  )  {
+		return sprintf("%s [-m] [/subject]: CN(CommonName) required in subject", $c->cmd);
+	} # NOT REACHABLE #
+	elsif(	!defined $subj	)  {
+		return sprintf("%s [-m] [/subject]: subject required", $c->cmd);
+	} # NOT REACHABLE #
+
+	$type = "rsa:2048"  if(  $type eq ""  );
+	if(  $type ne "rsa:1024"   && $type ne "rsa:2048"  && $type ne "rsa:3072"  && $type ne "rsa:4096"  )  {
+		return sprintf("%s not supported certificate type(%s)", $c->cmd, $type);
+	} # NOT REACHABLE #
+	my $keysize = ($type =~ /rsa:(\d+)/) ? $1 : 2048;
+
+	$sign = "sha256"    if(  $sign eq ""  );
+	if(  $sign ne "sha" && $sign ne "sha1" && $sign ne "sha256"  )  {
+		return sprintf("%s not supported certificate signature(%s)", $c->cmd, $sign);
+	} # NOT REACHABLE #
+	my $algorithm = ($sign eq "sha" || $sign eq "sha1") ? "SHA-1" : "SHA-256";
+
+	printf "cn:		  %s\n", $cn;
+	printf "subject:	  %s\n", $subj;
+	printf "sans:		  N/A\n";
+	printf "type:		  %s\n", $type;
+	printf "sign:		  %s\n", $sign;
+	printf "markable:	  %s\n", ($mark ? "Yes" : "No");
+	printf "OCSP Must Staple: N/A (soft fail)\n";
+
+	my $csrfile = new File::Temp(UNLINK => 0);
+	   $csrfile->unlink_on_destroy(1);
+
+	my @generate_csr = (
+		type      => "generate_csr",
+		path      => $csrfile->filename, 
+		cn        => $cn,
+		member    => $cn,
+		key_size  => $keysize,
+		algorithm => $algorithm,
+	);
+
+	foreach (  split m|/|, $subj  )	 {
+		my($attrib, $value) = split /=/, $_, 2;
+		for($attrib) {
+			when ("C")  { push @generate_csr, (country  => $value); }
+			when ("ST") { push @generate_csr, (state    => $value); }
+			when ("L")  { push @generate_csr, (locality => $value); }
+			when ("O")  { push @generate_csr, (org      => $value); }
+			when ("OU") { push @generate_csr, (org_unit => $value); }
+		}
+	}
+
+	my($master, $id, $pass) = $dbh->selectrow_array(q{
+		SELECT master, authid, authpass
+		  FROM plugin_infoblox WHERE master = ?
+		 UNION
+		SELECT master, authid, authpass
+		  FROM plugin_infoblox_member
+		 INNER JOIN plugin_infoblox USING(masterid)
+		 WHERE member = ?
+	}, {}, $cn, $cn);
+
+	my $session = Infoblox::Session->new(
+		master          => $master,
+		username        => $id,
+		password        => $pass,
+		verify_hostname => 0,
+	);
+
+	if(not  $session  )  {
+		printf("%s: unsuccessfull, master=%s, username=%s\n", $c->cmd, $master||"(null)", $id||"(null)");
+		return undef;
+	} # NOT REACHABLE #
+
+	# Generate CSR
+	print "Infoblox Genrate CSR requesting...";
+	my $result = $session->export_data(@generate_csr);
+	print "done\n";
+	$session->logout();
+
+	if(not  $result  )  {
+		printf("%s: unsuccessfull, master=%s, username=%s: Cannot generate CSR.\n", $c->cmd, $master||"(null)", $id||"(null)");
+		return undef;
+	} # NOT REACHABLE #
+
+	my $csr = join("", <$csrfile>);
+	close($csrfile);
+
+	print $csr;
+
+	print import_csr($c, $dbh, $csr, $mark);
+
+	$dbh->disconnect;
+
+	return sprintf("%s successfully: subject=%s", $c->cmd, $subj);
+} # infoblox_generate
+
+sub infoblox_deploy {
+	my $c	 = shift;
+	my $dbh	 = $c->stash->{DBH};
+	my $argv = shift @{$c->argv};
+
+	infoblox_init($c)  if(  $c->stash->{PLUGIN_HPEILO} == 0  );
+
+	my $crt;
+	if(  $argv =~ /^\d+$/  )  {
+		$crt = $dbh->selectrow_array(q{
+			SELECT crttext
+			  FROM certificate
+			 INNER JOIN sslcrt USING(certid)
+			 WHERE certid = ?
+		}, {}, $argv);
+	}  else	 {
+		$crt = $dbh->selectrow_array(q{
+			SELECT crttext
+			  FROM certificate
+			 INNER JOIN sslcrt USING(certid)
+			 WHERE commonname = ? AND is_active = 't' AND is_marked = 't'
+		}, {}, $argv);
+	}
+
+	if(  !defined $crt  )  {
+		return sprintf("%s ignored: argv=%s, error=no certificate found", $c->cmd, $argv || "(null)");
+	} # NOT REACHABLE #
+
+	my $cn	 = get_cn_from_subject(openssl_x509_subject($crt));
+
+	my($master, $id, $pass) = $dbh->selectrow_array(q{
+		SELECT master, authid, authpass
+		  FROM plugin_infoblox WHERE master = ?
+		 UNION
+		SELECT master, authid, authpass
+		  FROM plugin_infoblox_member
+		 INNER JOIN plugin_infoblox USING(masterid)
+		 WHERE member = ?
+	}, {}, $cn, $cn);
+
+	my $crtfile = new File::Temp(UNLINK => 0);
+	   $crtfile->unlink_on_destroy(1);
+	   $crtfile->printflush($crt);
+
+	my $session = Infoblox::Session->new(
+		master		=> $master,
+		username	=> $id,
+		password	=> $pass,
+		verify_hostname => 0,
+	);
+
+	if(not  $session  )  {
+		printf("%s: unsuccessfull, master=%s, username=%s\n", $c->cmd, $master||"(null)", $id||"(null)");
+		return undef;
+	} # NOT REACHABLE #
+
+	# Deploy CRT
+	$session->import_data(
+		type            => "admin_cert",
+		path            => $crtfile->filename,
+		member          => $cn,
+	);
+	$session->logout();
+
+	$crtfile->close();
+
+	printf("%s successfull: imported\n", $c->cmd);
+	return undef;
+} # infoblox_deploy
+
+sub infoblox_credential {
+	my $c	 = shift;
+	my $dbh	 = $c->stash->{DBH};
+
+	infoblox_init($c)  if(  $c->stash->{PLUGIN_HPEILO} == 0  );
+
+	$c->getopt("id|i=s", "password|pass|p=s", "master|M=s");	# XXX: Do error handle #
+
+	my $master   = $c->options->{master}   || undef;
+	my $id	     = $c->options->{id}       || undef;
+	my $pass     = $c->options->{password} || undef;
+
+	if(  !defined $master  )  {
+		printf "%s: master option is required.\n", $c->cmd;
+		return undef;
+	} # NOT REACHABLE #
+
+	my $masterid = $dbh->selectrow_array("SELECT masterid FROM plugin_infoblox WHERE master = ?", {}, $master);
+	if(  !defined $masterid  )  {
+		if(  !defined $id  )  {
+			printf "[%s] id for %s: ", $master, $master;
+			chomp($id = <STDIN>);
+		}
+		if(  !defined $pass  )	{
+			$pass = read_password(sprintf "[%s] password for %s: ", $master, $id);
+		}
+		$dbh->do("INSERT INTO plugin_infoblox (master, authid, authpass) VALUES (?, ?, ?);", {}, $master, $id, $pass);
+		$masterid = $dbh->selectrow_array("SELECT last_insert_rowid() FROM plugin_infoblox");
+	}  elsif(  defined $id  )  {
+		if(  !defined $pass  )	{
+			$pass = read_password(sprintf "[%s] password for %s: ", $master, $id);
+		}
+		$dbh->do("UPDATE plugin_infoblox SET authid = ?, authpass = ? WHERE masterid = ?;", {}, $id, $pass, $masterid);
+	}
+
+	foreach	 my $argv  ( @{$c->argv} ) {
+		if(  $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM plugin_infoblox_member WHERE member = ?)", {}, $argv)	 )  {
+			$dbh->do("UPDATE plugin_infoblox_member SET masterid = ? WHERE member = ?", {}, $masterid, $argv);
+		} else {
+			$dbh->do("INSERT INTO plugin_infoblox_member (member, masterid) VALUES(?, ?);", {}, $argv, $masterid);
+		}
+	}
+	$dbh->disconnect;
+
+	return undef;
+} # infoblox_credential
