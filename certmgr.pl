@@ -941,7 +941,9 @@ sub sign {
 
 use feature "switch";
 use experimental "smartmatch";
-use constant PLUGIN_HPEILO => 2017111401;
+use constant PLUGIN_HPEILO  => 2017111401;
+use constant RETRY_NUMS     => 30;
+use constant RETRY_INTERVAL => 10;
 
 use JSON::PP;
 use LWP::UserAgent;
@@ -1037,6 +1039,7 @@ sub hpeilo_generate {
 	## FOR DEBUG USE ##
 
 	my($id, $pass) = $dbh->selectrow_array( "SELECT authid, authpass FROM plugin_hpeilo WHERE LOWER(commonname) = ?", {}, lc($cn) );
+	my $res;
 
 	# Generate CSR
 	print "iLO Generate CSR requesting...";
@@ -1049,7 +1052,15 @@ sub hpeilo_generate {
 	   $gen->header(Accept => "application/json");
 	   $gen->content($json->encode(\%generate_csr));
 
-	   $ua->request($gen);
+	$res = $ua->request($gen);
+	if(  $res->is_success  )  {
+# XXX: FOR DEBUG USE IN THIS TIME ###
+print $res->content, "\n";
+# XXX: FOR DEBUG USE IN THIS TIME ###
+	}  else  {
+		printf "%s, so abort(cn=%s, id=%s)\n", $res->status_line, $cn||"(null)", $id||"(null)";
+		return undef;
+	} # NOT REACHABLE #
 
 	print "done\n";
 
@@ -1066,8 +1077,8 @@ sub hpeilo_generate {
 	   $get->header(Accept => "application/json");
 
 	my $csr = undef;
-	for(  my $retry = 30;  $retry;  $retry--  )  {
-		print "...";
+	for(  my $retry = 0;  $retry < RETRY_NUMS;  $retry++  )  {
+		print "REQ";
 		my $res = $ua->request($get);
 
 		if(  $res->is_success  )  {
@@ -1077,13 +1088,18 @@ sub hpeilo_generate {
 				last;
 			} # NOT REACHABLE #
 			else  {
-				print "yet...";
+				print "..yet";
 			}
 		}
+# XXX: FOR DEBUG USE IN THIS TIME ###
 else {
 print $res->status_line, "\n";
 }
-		sleep 5;
+# XXX: FOR DEBUG USE IN THIS TIME ###
+		for(  my $interval = 0;  $interval < RETRY_INTERVAL;  $interval++  )  {
+			print "."  if(  $interval % 2 == 0  );
+			sleep 1;
+		}
 	}
 	print "done\n";
 
