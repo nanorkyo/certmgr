@@ -95,6 +95,7 @@ sub readfile($) {
 	my $file = shift;
 	my $fh = new IO::File($file, "r")  or  die sprintf("cannot read file(%s): %s", $file, $!);
 	my $data = join("", <$fh>);
+	   $data =~ s/\r?\n/\n/g;
 	close($fh);
 	return $data;
 } # readfile
