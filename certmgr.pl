@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 use strict;
 use integer;
-use constant DBVER       => 2017114101;
+use constant DBVER       => 2017121201;
 use constant CONFIGFILES => qw(.certmgrrc  $ENV{HOME}/.certmgrrc  /etc/certmgrrc);
 
 use DBI;
@@ -254,7 +254,7 @@ sub init {
 			enddate		TIMESTAMP	NOT NULL,	-- UTC
 			crttext		TEXT		NOT NULL,
 			hashkey		TEXT		NOT NULL,
-				FOREIGN KEY(certid) REFERENCES certificate(certid)
+				FOREIGN KEY(certid) REFERENCES certificate(certid) ON DELETE CASCADE ON UPDATE CASCADE
 		);
 	});
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslcrt_certid_idx  ON sslcrt(certid)");
@@ -267,7 +267,7 @@ sub init {
 			subject		TEXT		NOT NULL,
 			csrtext		TEXT		NOT NULL,
 			hashkey		TEXT		NOT NULL,
-				FOREIGN KEY(certid) REFERENCES certificate(certid)
+				FOREIGN KEY(certid) REFERENCES certificate(certid) ON DELETE CASCADE ON UPDATE CASCADE
 		);
 	});
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslcsr_certid_idx  ON sslcsr(certid)");
@@ -279,7 +279,7 @@ sub init {
 			certid		INTEGER		NOT NULL,
 			keytext		TEXT		NOT NULL,
 			hashkey		TEXT		NOT NULL,
-				FOREIGN KEY(certid) REFERENCES certificate(certid)
+				FOREIGN KEY(certid) REFERENCES certificate(certid) ON DELETE CASCADE ON UPDATE CASCADE
 		);
 	});
 	$dbh->do("CREATE UNIQUE INDEX IF NOT EXISTS sslkey_certid_idx ON sslkey(certid)");
