@@ -1055,9 +1055,11 @@ sub hpeilo_generate {
 
 	$res = $ua->request($gen);
 	if(  $res->is_success  )  {
-# XXX: FOR DEBUG USE IN THIS TIME ###
-print $res->content, "\n";
-# XXX: FOR DEBUG USE IN THIS TIME ###
+		my $ret = $json->decode($res->content);
+		if(  $ret->{"error"}->{"\@Message.ExtendedInfo"}->{"MessageID"} ne "iLO.0.10.GeneratingCertificate"  )  {
+			printf "error has occured, so aborted.\n%s\n", $res->content;
+			return undef;
+		} # NOT REACHABLE #
 	}  else  {
 		printf "%s, so abort(cn=%s, id=%s)\n", $res->status_line, $cn||"(null)", $id||"(null)";
 		return undef;
@@ -1079,7 +1081,8 @@ print $res->content, "\n";
 
 	my $csr = undef;
 	for(  my $retry = 0;  $retry < RETRY_NUMS;  $retry++  )  {
-		print "REQ";
+		print ".";
+
 		my $res = $ua->request($get);
 
 		if(  $res->is_success  )  {
@@ -1088,15 +1091,10 @@ print $res->content, "\n";
 				$csr = $generated_csr->{CertificateSigningRequest};
 				last;
 			} # NOT REACHABLE #
-			else  {
-				print "..yet";
-			}
+		}  else  {
+			printf "%s, so abort(cn=%s, id=%s)\n", $res->status_line, $cn||"(null)", $id||"(null)";
+			return undef;
 		}
-# XXX: FOR DEBUG USE IN THIS TIME ###
-else {
-print $res->status_line, "\n";
-}
-# XXX: FOR DEBUG USE IN THIS TIME ###
 		for(  my $interval = 0;  $interval < RETRY_INTERVAL;  $interval++  )  {
 			print "."  if(  $interval % 2 == 0  );
 			sleep 1;
