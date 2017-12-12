@@ -1079,6 +1079,15 @@ sub infoblox_generate {
 		return undef;
 	} # NOT REACHABLE #
 
+	if(  $session->status_code == 1009  )  {
+		printf("%s: unsuccessfull, master(%s)'s infoblox version is %s, so not supported.  Update your p5-Infoblox ports.\n", $c->cmd, $master||"(null)", $sesssion->server_version());
+		return undef;
+	} # NOT REACHABLE #
+	elsif(  $session->status_code != 0  )  {
+		printf("%s: unexpected error(status code = %d): status detail = %s.\n", $c->cmd, $sesssion->status_code, $session->status_detail);
+		return undef;
+	}
+
 	# Generate CSR
 	print "Infoblox Genrate CSR requesting...";
 	my $result = $session->export_data(@generate_csr);
@@ -1086,7 +1095,7 @@ sub infoblox_generate {
 	$session->logout();
 
 	if(not  $result  )  {
-		printf("%s: unsuccessfull, master=%s, username=%s: Cannot generate CSR.\n", $c->cmd, $master||"(null)", $id||"(null)");
+		printf("%s: unsuccessfull, master=%s, username=%s: Cannot generate CSR by '%s'[%d].\n", $c->cmd, $master||"(null)", $id||"(null)", $session->status_detail, $session->status_code);
 		return undef;
 	} # NOT REACHABLE #
 
