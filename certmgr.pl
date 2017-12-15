@@ -690,7 +690,17 @@ sub export_cert($$$$$$$$$@) {
 			$certid = $argv;
 			$cn     = $dbh->selectrow_array("SELECT commonname FROM certificate WHERE certid = ?", {}, $argv);
 		}  else  {
-			$certid = $dbh->selectrow_array("SELECT certid     FROM certificate WHERE commonname = ? AND is_marked = 't' ORDER BY is_active DESC LIMIT 1", {}, $argv);
+			$certid = $dbh->selectrow_array(q{
+				SELECT certid
+				  FROM certificate
+				  LEFT JOIN sslcrt USING(certid)
+				 WHERE commonname = ?
+				   AND CASE
+				       WHEN EXISTS (SELECT * FROM certificate WHERE commonname = ? AND is_marked = 't') THEN is_marked = 't'
+				       ELSE DATETIME('NOW', 'LOCALTIME') BETWEEN startdate AND enddate
+				       END
+				 ORDER BY is_active DESC LIMIT 1
+			}, {}, $argv, $argv);
 			$cn     = $argv;
 		}
 	
