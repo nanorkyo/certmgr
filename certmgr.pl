@@ -1066,7 +1066,7 @@ sub hpeilo_generate {
 	$res = $ua->request($gen);
 	if(  $res->is_success  )  {
 		my $ret = $json->decode($res->content);
-		if(  $ret->{"error"}->{"\@Message.ExtendedInfo"}->{"MessageID"} ne "iLO.0.10.GeneratingCertificate"  )  {
+		if(  $ret->{"Messages"}->[0]->{"MessageID"} ne "iLO.0.10.GeneratingCertificate"  )  {
 			printf "error has occured, so aborted.\n%s\n", $res->content;
 			return undef;
 		} # NOT REACHABLE #
