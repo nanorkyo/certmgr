@@ -151,7 +151,7 @@ certmgr は設定ファイルを必要とします。
 重村法克
 
 ## スポンサー
-[株式会社エンターモーション](http://entermotion.jp/)
+[株式会社エンターモーション](https://entermotion.jp/)
 
 ## 参考文献
 * [SSLサーバー証明書の作り方](https://wiki.ninth-nine.com/SSL証明書/サーバー証明書の作り方)
