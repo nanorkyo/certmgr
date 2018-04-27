@@ -116,6 +116,30 @@ sub refilename($$$$$$$$) {
 	return $filename;
 } # refilename
 
+sub parsefile($$) {
+	my($fh, $callback) = @_;
+
+	my($text, $header, $type);
+	while(  <$fh>  )  {
+		if(  m/^-----\s*BEGIN\s+(?:(CERTIFICATE)|(CERTIFICATE\s+(REQUEST))|((PRIVATE)\s+KEY))\s*-----$/  )  {
+			$text   = $_;
+			$type   = $1 || $3 || $5;
+			$header = $1 || $2 || $4;
+			next;
+		} # NOT REACHABLE #
+
+		$text .= $_  if(  $text ne ""  );
+
+		if(  m|^-----END\s+\Q${header}\E\s*-----$|  )  {
+			&{$callback}($type, $text);
+			undef $text;
+			undef $header;
+		}
+	}
+
+	return;
+} # parsefile
+
 sub filtcmd($@) {
 	my $data   = shift;
 	my @cmd    = @_;
@@ -565,38 +589,19 @@ sub import_crt($$$) {
 sub import_multiple($$$$) {
 	my($c, $dbh, $fh, $mark) = @_;
 
-	my($csr, $key, $crt, $header) = ("", "", "", "");
-	while(  <$fh>  )  {
-		if(  m|^-----\s*BEGIN\s+(CERTIFICATE\s+REQUEST)\s*-----$|  )  {
-			$csr    = $_;
-			$header = $1;
-			next;
-		}  # NOT REACHABLE #
-		elsif(  m|^-----\s*BEGIN\s+(PRIVATE\s+KEY)\s*-----$|  )  {
-			$key    = $_;
-			$header = $1;
-			next;
-		}  # NOT REACHABLE #
-		elsif(  m|^-----\s*BEGIN\s+(CERTIFICATE)\s*-----$| )  {
-			$crt    = $_;
-			$header = $1;
-			next;
-		} # NOT REACHABLE #
+	parsefile($fh, sub {
+		my($type, $text) = @_;
 
-		$csr .= $_  if(  $csr ne ""  );
-		$key .= $_  if(  $key ne ""  );
-		$crt .= $_  if(  $crt ne ""  );
-
-		if(  m|^-----END\s+\Q${header}\E\s*-----$|  )  {
-			import_csr($c, $dbh, $csr, $mark)  if(  $csr ne ""  );
-			import_key($c, $dbh, $key       )  if(  $key ne ""  );
-			import_crt($c, $dbh, $crt       )  if(  $crt ne ""  );
-			$csr    = "";
-			$key    = "";
-			$crt    = "";
-			$header = "";
+		if(  $type eq "REQUEST"  )  {
+			import_csr($c, $dbh, $text, $mark);
+		}  elsif(  $type eq "PRIVATE"  )  {
+			import_key($c, $dbh, $text       );
+		}  elsif(  $type eq "CERTIFICATE"  )  {
+			import_crt($c, $dbh, $text       );
+		}  else  {
+			printf("Unknown certificate file: type=%s, text:\n%s\n", $type, $text);
 		}
-	}
+	});
 
 	return;
 } # import_multiple
@@ -617,12 +622,12 @@ sub import {
 	my $mark  = $dmark ? ($c->options->{unmark} ? "f" : "t") : ($c->options->{mark} ? "t" : "f");
 
 	foreach  my $file  ( @{$c->argv} )  {
-		if(not  -r $file  )  {
+		if(not  $file eq "-" || -r $file  )  {
 			printf("%s ignored: error=no file found, file='%s'\n", $c->cmd, $file);
 			next;
 		} # NOT REACHABLE #
 
-		my $fh = new IO::File($file, "r")   or  die sprintf("cannot read file(%s): %s", $file, $!);
+		my $fh = new IO::File($file eq "-" ? "/dev/stdin" : $file, "r")   or  die sprintf("cannot read file(%s): %s", $file, $!);
 		import_multiple($c, $dbh, $fh, $mark);
 		close($fh);
 	}
@@ -802,52 +807,57 @@ sub export {
 
 sub info_file($$$) {
 	my($c, $dbh, $file) = @_;
-	my $text = readfile($file);
 
-	my($certkind, $certid, $cn, $subject, $issuer, $startdate, $enddate, $hash, $inrepo);
-	if(  $text =~ m|^-----\s*BEGIN\s+CERTIFICATE\s+REQUEST\s*-----$|m  )  {
-		$certkind = "CSR";
-		$subject  = openssl_req_subject($text);
-		$cn       = get_cn_from_subject($subject);
-		$hash     = openssl_req_pubkey($text);
-		$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslcsr WHERE hashkey = ?)", {}, $hash);
-	}  elsif(  $text =~ m|^-----\s*BEGIN\s+PRIVATE\s+KEY\s*-----$|m  )  {
-		$certkind = "KEY";
-		$cn       = "(N/A)";
-		$hash     = openssl_pkey_pubkey($text);
-		$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslkey WHERE hashkey = ?)", {}, $hash);
-	}  elsif(  $text =~ m|^-----\s*BEGIN\s+CERTIFICATE\s*-----$|m )  {
-		$certkind = "CRT";
-		($subject, $issuer)    = openssl_x509_subject($text);
-		$cn       = get_cn_from_subject($subject);
-		($startdate, $enddate) = openssl_x509_date($text);
-		$hash     = openssl_x509_pubkey($text);
-		$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslcrt WHERE hashkey = ?)", {}, $hash);
-	}  else  {
-		$cn       = "(N/A)";
-		$certkind = "UNKNOWN";
-	}
+	my $fh = new IO::File($file eq "-" ? "/dev/stdin" : $file, "r")   or  die sprintf("cannot read file(%s): %s", $file, $!);
+	parsefile($fh, sub {
+		my($type, $text) = @_;
 
-	if(  defined $hash  )  {
-		$certid = $dbh->selectrow_array(q{
-			SELECT certid FROM sslcrt WHERE hashkey = ?
-			 UNION
-			SELECT certid FROM sslcsr WHERE hashkey = ?
-			 UNION
-			SELECT certid FROM sslkey WHERE hashkey = ?
-		}, {}, $hash, $hash, $hash);
-	}
+		my($certkind, $certid, $cn, $subject, $issuer, $startdate, $enddate, $hash, $inrepo);
+		if(  $type eq "REQUEST"  )  {
+			$certkind = "CSR";
+			$subject  = openssl_req_subject($text);
+			$cn       = get_cn_from_subject($subject);
+			$hash     = openssl_req_pubkey($text);
+			$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslcsr WHERE hashkey = ?)", {}, $hash);
+		}  elsif(  $type eq "PRIVATE"  )  {
+			$certkind = "KEY";
+			$cn       = "(N/A)";
+			$hash     = openssl_pkey_pubkey($text);
+			$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslkey WHERE hashkey = ?)", {}, $hash);
+		}  elsif(  $type eq "CERTIFICATE"  )  {
+			$certkind = "CRT";
+			($subject, $issuer)    = openssl_x509_subject($text);
+			$cn       = get_cn_from_subject($subject);
+			($startdate, $enddate) = openssl_x509_date($text);
+			$hash     = openssl_x509_pubkey($text);
+			$inrepo   = $dbh->selectrow_array("SELECT EXISTS (SELECT * FROM sslcrt WHERE hashkey = ?)", {}, $hash);
+		}  else  {
+			$cn       = "(N/A)";
+			$certkind = "UNKNOWN";
+		}
 
-	printf "Certificate ID:		%s\n", (defined $certid ? $certid : "N/A");
-	printf "CommonName:		%s\n", $cn;
-	printf "Active Certificate:	N/A\n";
-	printf "Marked Certificate:	N/A\n";
-	printf "Stored Certificate:	%s (%s)\n", $certkind, ($inrepo ? "already imported" : "not yet imported");
-	printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
-	printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
-	printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "${startdate}Z - ${enddate}Z" : "N/A");
-	printf "HPKP type Hash Value:	%s\n", $hash;
-	printf "\n";
+		if(  defined $hash  )  {
+			$certid = $dbh->selectrow_array(q{
+				SELECT certid FROM sslcrt WHERE hashkey = ?
+				 UNION
+				SELECT certid FROM sslcsr WHERE hashkey = ?
+				 UNION
+				SELECT certid FROM sslkey WHERE hashkey = ?
+			}, {}, $hash, $hash, $hash);
+		}
+
+		printf "Certificate ID:		%s\n", (defined $certid ? $certid : "N/A");
+		printf "CommonName:		%s\n", $cn;
+		printf "Active Certificate:	N/A\n";
+		printf "Marked Certificate:	N/A\n";
+		printf "Stored Certificate:	%s (%s)\n", $certkind, ($inrepo ? "already imported" : "not yet imported");
+		printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
+		printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
+		printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "${startdate}Z - ${enddate}Z" : "N/A");
+		printf "HPKP type Hash Value:	%s\n", $hash;
+		printf "\n";
+	});
+	close($fh);
 } # info_file
 
 sub info_repo($$$$) {
@@ -894,7 +904,7 @@ sub info {
 	$c->getopt("csr");
 
 	foreach  my $argv  ( @{$c->argv} )  {
-		if(  -r $argv  )  {
+		if(  $argv eq "-" || -r $argv  )  {
 			info_file($c, $dbh, $argv);
 		}  else  {
 			info_repo($c, $dbh, ($c->options->{csr} ? 't' : 'f'), $argv);
