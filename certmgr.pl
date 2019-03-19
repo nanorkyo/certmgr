@@ -118,7 +118,7 @@ sub parsefile($$) {
 	my(@text, $header, $type);
 	while(  <$fh>  )  {
 		s/\r?\n$//;
-		if(  m/^-----\s*BEGIN\s+(?:(CERTIFICATE)|(CERTIFICATE\s+(REQUEST))|((PRIVATE)\s+KEY))\s*-----$/  )  {
+		if(  m/^-----\s*BEGIN\s+(?:(CERTIFICATE)|(CERTIFICATE\s+(REQUEST))|(RSA\s+(PRIVATE)\s+KEY))\s*-----$/  )  {
 			@text   = ($_);
 			$type   = $1 || $3 || $5;
 			$header = $1 || $2 || $4;
