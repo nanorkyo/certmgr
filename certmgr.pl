@@ -91,15 +91,6 @@ sub pre_process {
 	}
 } # pre_process #
 
-sub readfile($) {
-	my $file = shift;
-	my $fh = new IO::File($file, "r")  or  die sprintf("cannot read file(%s): %s", $file, $!);
-	my $data = join("", <$fh>);
-	   $data =~ s/\r?\n/\n/g;
-	close($fh);
-	return $data;
-} # readfile
-
 sub refilename($$$$$$$$) {
 	my($filename, $cn, $startyyyy, $startmm, $startdd, $endyyyy, $endmm, $enddd) = @_;
 	   $filename =~ s/%CN%/$cn/g;
