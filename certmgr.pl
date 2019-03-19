@@ -119,7 +119,7 @@ sub parsefile($$) {
 		push @text, $_;
 
 		if(  m|^-----END\s+\Q${header}\E\s*-----$|  )  {
-			&{$callback}( $type, join("\n", @text) );
+			&{$callback}( $type, join("\n", @text, "") );
 			@text = ();
 			undef $header;
 		}
