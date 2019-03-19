@@ -115,20 +115,21 @@ sub refilename($$$$$$$$) {
 sub parsefile($$) {
 	my($fh, $callback) = @_;
 
-	my($text, $header, $type);
+	my(@text, $header, $type);
 	while(  <$fh>  )  {
+		s/\r?\n$//;
 		if(  m/^-----\s*BEGIN\s+(?:(CERTIFICATE)|(CERTIFICATE\s+(REQUEST))|((PRIVATE)\s+KEY))\s*-----$/  )  {
-			$text   = $_;
+			@text   = ($_);
 			$type   = $1 || $3 || $5;
 			$header = $1 || $2 || $4;
 			next;
 		} # NOT REACHABLE #
 
-		$text .= $_  if(  $text ne ""  );
+		push @text, $_;
 
 		if(  m|^-----END\s+\Q${header}\E\s*-----$|  )  {
-			&{$callback}($type, $text);
-			undef $text;
+			&{$callback}( $type, join("\n", @text) );
+			@text = ();
 			undef $header;
 		}
 	}
