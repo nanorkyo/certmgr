@@ -151,7 +151,7 @@ sub openssl_x509_subject($) {
 	my %dist;
 	while(  $dist =~ m{^((?:subject)|(?:issuer))=\s*(.+)$}mg  )  {
 		my($type, $dis) = ($1, $2);
-		if(  $dis =~ s|^([^/])|/\1|  )  {
+		if(  $dis =~ s|^([^/])|/$1|  )  {
 			$dis =~ s|,\s+|/|g;
 			$dis =~ s/\s+=\s+/=/g;
 		}
@@ -165,7 +165,7 @@ sub openssl_req_subject($) {
 	my $subj = filtcmd($pem, qw{openssl req -noout -subject});
 	chomp($subj);
 	$subj =~ s/^subject=\s*//;
-	if(  $subj =~ s|^([^/])|/\1|  )  {
+	if(  $subj =~ s|^([^/])|/$1|  )  {
 		$subj =~ s|,\s+|/|g;
 		$subj =~ s/\s+=\s+/=/g;
 	}
