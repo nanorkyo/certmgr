@@ -44,6 +44,7 @@ sub setup {
 		"info"     => "Display CSR/KEY/CRT information",
 		"generate" => "Generate a CSR(and KEY)",
 		"sign"     => "Signing a CSR by dehydrated (expremental)",
+		"remove"   => "Remove CSR/KEY/CRT",
 		"import"   => "Import CSR/KEY/CRT",
 		"export"   => "Export CSR/KEY/CRT",
 	});
@@ -475,6 +476,56 @@ sub list {
 		printf(join(" ", @format, "\n"), @$_);
 	}
 } # list #
+
+sub remove {
+	my $c    = shift;
+	my $dbh  = $c->stash->{DBH};
+
+	init($c)  if(  $c->stash->{DBVER} == 0  );
+
+	#TODO:
+	#$c->getopt("force|f", "csr|S", "key|K", "crt|C");	# XXX: Do error handle #
+
+	my $where;
+	foreach  my $argv  ( @{$c->argv} )  {
+		my $where = ($argv =~ /^\d+$/) ? "certid" : "commonname";
+		my($certid, $cn, $active, $marked, $subject, $issuer, $startdate, $enddate, $incrt , $incsr, $inkey, $hash) = $dbh->selectrow_array(sprintf(q{
+			SELECT certid, commonname, is_active, is_marked, COALESCE(sslcrt.subject, sslcsr.subject), issuer, startdate, enddate, crttext IS NOT NULL, csrtext IS NOT NULL, keytext IS NOT NULL, COALESCE(sslcrt.hashkey, sslcsr.hashkey, sslkey.hashkey)
+			  FROM certificate
+			  LEFT JOIN sslcrt USING(certid)
+			  LEFT JOIN sslcsr USING(certid)
+			  LEFT JOIN sslkey USING(certid)
+			 WHERE %s = ?
+			 ORDER BY CASE WHEN is_active = 't' THEN 0 ELSE 1 END ASC,
+			          CASE WHEN is_marked = 't' THEN 0 ELSE 1 END ASC,
+				  certid DESC
+			 LIMIT 1
+		}, $where), {}, $argv);
+
+		if(  defined $certid  )  {
+			printf "Certificate ID:		%d\n", $certid;
+			printf "CommonName:		%s\n", $cn;
+			printf "Active Certificate:	%s\n", ($active eq "t" ? "YES" : "no");
+			printf "Marked Certificate:	%s\n", ($marked eq "t" ? "YES" : "no");
+			printf "Stored Certificate:	%s\n", join(" ", ($incrt ? ("CRT") : ()),  ($incsr ? ("CSR") : ()), ($inkey ? ("KEY"): ())) || "!!!BUG!!!";
+			printf "Subject:		%s\n", ($subject ne "" ? $subject : "N/A");
+			printf "Issuer:			%s\n", ($issuer  ne "" ? $issuer  : "N/A");
+			printf "Expiration Date:	%s\n", (defined $startdate && defined $enddate ? "$startdate - $enddate" : "N/A");
+			printf "HPKP type Hash Value:	%s\n", $hash;
+			printf "Deleted";
+			$dbh->do("DELETE FROM certificate WHERE certid = ?", {}, $certid);
+			$dbh->commit;
+			printf "....done";
+			printf "\n";
+		}  else  {
+			printf "No not found: [%s]\n", $argv;
+		}
+	}
+
+	$dbh->disconnect();
+
+	return undef;
+} # remove
 
 sub import_csr($$$$) {
 	my($c, $dbh, $csr, $mark) = @_;
